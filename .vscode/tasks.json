@@ -1,0 +1,390 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Open Arduino IDE",
+			"type": "shell",
+			"command": "C:\\Program Files\\Arduino IDE\\Arduino IDE.exe",
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared"
+			},
+			"problemMatcher": [],
+			"detail": "Open Arduino IDE to compile and upload ESP8266 sketches"
+		},
+		{
+			"label": "Open Arduino IDE (Fallback)",
+			"type": "shell",
+			"command": "${workspaceFolder}/start_arduino.bat",
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared"
+			},
+			"problemMatcher": [],
+			"detail": "Open Arduino IDE using batch file (tries multiple locations)"
+		},
+		{
+			"label": "Compile Basic LED",
+			"type": "shell",
+			"command": "arduino-cli",
+			"args": [
+				"compile",
+				"--fqbn",
+				"esp8266:esp8266:nodemcuv2",
+				"basic_led_blink/basic_led_blink.ino"
+			],
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared"
+			},
+			"problemMatcher": [],
+			"detail": "Compile the basic LED blink sketch"
+		},
+		{
+			"label": "Compile Advanced LED",
+			"type": "shell",
+			"command": "arduino-cli",
+			"args": [
+				"compile",
+				"--fqbn",
+				"esp8266:esp8266:nodemcuv2",
+				"advanced_led_control/advanced_led_control.ino"
+			],
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared"
+			},
+			"problemMatcher": [],
+			"detail": "Compile the advanced LED control sketch"
+		},
+		{
+			"label": "Compile Bluetooth LED",
+			"type": "shell",
+			"command": "arduino-cli",
+			"args": [
+				"compile",
+				"--fqbn",
+				"esp8266:esp8266:nodemcuv2",
+				"bluetooth_led_control/bluetooth_led_control.ino"
+			],
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared"
+			},
+			"problemMatcher": [],
+			"detail": "Compile the bluetooth LED control sketch"
+		},
+		{
+			"label": "Upload Basic LED",
+			"type": "shell",
+			"command": "arduino-cli",
+			"args": [
+				"upload",
+				"--fqbn",
+				"esp8266:esp8266:nodemcuv2",
+				"--port",
+				"COM3",
+				"basic_led_blink/basic_led_blink.ino"
+			],
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared"
+			},
+			"problemMatcher": [],
+			"detail": "Upload the basic LED blink sketch to ESP8266"
+		},
+		{
+			"label": "Upload Advanced LED",
+			"type": "shell",
+			"command": "arduino-cli",
+			"args": [
+				"upload",
+				"--fqbn",
+				"esp8266:esp8266:nodemcuv2",
+				"--port",
+				"COM3",
+				"advanced_led_control/advanced_led_control.ino"
+			],
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared"
+			},
+			"problemMatcher": [],
+			"detail": "Upload the advanced LED control sketch to ESP8266"
+		},
+		{
+			"label": "Upload Bluetooth Test",
+			"type": "shell",
+			"command": "arduino-cli",
+			"args": [
+				"upload",
+				"--fqbn",
+				"esp8266:esp8266:nodemcuv2",
+				"--port",
+				"COM3",
+				"examples/bluetooth_test.ino"
+			],
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared"
+			},
+			"problemMatcher": [],
+			"detail": "Upload the bluetooth test sketch to ESP8266"
+		},
+		{
+			"label": "Upload Bluetooth LED",
+			"type": "shell",
+			"command": "arduino-cli",
+			"args": [
+				"upload",
+				"--fqbn",
+				"esp8266:esp8266:nodemcuv2",
+				"--port",
+				"COM3",
+				"bluetooth_led_control/bluetooth_led_control.ino"
+			],
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared"
+			},
+			"problemMatcher": [],
+			"detail": "Upload the bluetooth LED control sketch to ESP8266"
+		},
+		{
+			"label": "Compile E-Paper Display",
+			"type": "shell",
+			"command": "arduino-cli",
+			"args": [
+				"compile",
+				"--fqbn",
+				"esp8266:esp8266:nodemcuv2",
+				"epaper_display/epaper_display.ino"
+			],
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared"
+			},
+			"problemMatcher": [],
+			"detail": "Compile the E-Paper display sketch"
+		},
+		{
+			"label": "Upload E-Paper Display",
+			"type": "shell",
+			"command": "arduino-cli",
+			"args": [
+				"upload",
+				"--fqbn",
+				"esp8266:esp8266:nodemcuv2",
+				"--port",
+				"COM3",
+				"epaper_display/epaper_display.ino"
+			],
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared"
+			},
+			"problemMatcher": [],
+			"detail": "Upload the E-Paper display sketch to ESP8266"
+		},
+		{
+			"label": "Compile WiFi LED",
+			"type": "shell",
+			"command": "arduino-cli",
+			"args": [
+				"compile",
+				"--fqbn",
+				"esp8266:esp8266:nodemcuv2",
+				"wifi_led_control/wifi_led_control.ino"
+			],
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared"
+			},
+			"problemMatcher": [],
+			"detail": "Compile the WiFi LED control sketch"
+		},
+		{
+			"label": "Upload WiFi LED",
+			"type": "shell",
+			"command": "arduino-cli",
+			"args": [
+				"upload",
+				"--fqbn",
+				"esp8266:esp8266:nodemcuv2",
+				"--port",
+				"COM3",
+				"wifi_led_control/wifi_led_control.ino"
+			],
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared"
+			},
+			"problemMatcher": [],
+			"detail": "Upload the WiFi LED control sketch to ESP8266"
+		},
+		{
+			"label": "Compile E-Paper Simple Test",
+			"type": "shell",
+			"command": "arduino-cli",
+			"args": [
+				"compile",
+				"--fqbn",
+				"esp8266:esp8266:nodemcuv2",
+				"examples/epaper_simple_test.ino"
+			],
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared"
+			},
+			"problemMatcher": [],
+			"detail": "Compile the E-Paper simple test sketch"
+		},
+		{
+			"label": "Upload E-Paper Simple Test",
+			"type": "shell",
+			"command": "arduino-cli",
+			"args": [
+				"upload",
+				"--fqbn",
+				"esp8266:esp8266:nodemcuv2",
+				"--port",
+				"COM3",
+				"examples/epaper_simple_test.ino"
+			],
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared"
+			},
+			"problemMatcher": [],
+			"detail": "Upload the E-Paper simple test sketch to ESP8266"
+		},
+		{
+			"label": "Compile Bluetooth Test",
+			"type": "shell",
+			"command": "arduino-cli",
+			"args": [
+				"compile",
+				"--fqbn",
+				"esp8266:esp8266:nodemcuv2",
+				"examples/bluetooth_test.ino"
+			],
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared"
+			},
+			"problemMatcher": [],
+			"detail": "Compile the bluetooth test sketch"
+		},
+		{
+			"label": "Compile Debug Test",
+			"type": "shell",
+			"command": "arduino-cli",
+			"args": [
+				"compile",
+				"--fqbn",
+				"esp8266:esp8266:nodemcuv2",
+				"examples/debug_test.ino"
+			],
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared"
+			},
+			"problemMatcher": [],
+			"detail": "Compile the E-Paper debug test sketch"
+		},
+		{
+			"label": "Upload Debug Test",
+			"type": "shell",
+			"command": "arduino-cli",
+			"args": [
+				"upload",
+				"--fqbn",
+				"esp8266:esp8266:nodemcuv2",
+				"--port",
+				"COM3",
+				"examples/debug_test.ino"
+			],
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared"
+			},
+			"problemMatcher": [],
+			"detail": "Upload the E-Paper debug test sketch to ESP8266"
+		},
+		{
+			"label": "Open Serial Monitor",
+			"type": "shell",
+			"command": "start",
+			"args": [
+				"putty",
+				"-serial",
+				"COM3",
+				"-sercfg",
+				"115200,8,n,1,N"
+			],
+			"group": "test",
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared"
+			},
+			"problemMatcher": [],
+			"detail": "Open PuTTY serial monitor (adjust COM port as needed)"
+		}
+	]
+}
