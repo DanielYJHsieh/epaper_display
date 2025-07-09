@@ -4,14 +4,17 @@
 #ifndef _GxEPD2_DISPLAY_SELECTION_GDEQ0426T82_H_
 #define _GxEPD2_DISPLAY_SELECTION_GDEQ0426T82_H_
 
-// 根據 GxEPD2 庫的命名慣例，GDEQ0426T82 應該歸類在 4.26" 類別
+// ✅ GDEQ0426T82 有專用的 GxEPD2 驅動程式！
+// 位於: GxEPD2/src/gdeq/GxEPD2_426_GDEQ0426T82.h
+// GitHub: https://github.com/ZinggJM/GxEPD2/tree/master/src/gdeq
 
-// 確認是否有支援 GDEQ0426T82 的驅動程式
-// 如果沒有，我們需要使用相容的驅動程式
-
-// 對於 4.26" 480x800 黑白顯示器，可能的選項：
-// - GxEPD2_426 (4.26" generic)
-// - GxEPD2_420 (4.20" 相容)
+// GDEQ0426T82 實際規格 (根據 GxEPD2_426_GDEQ0426T82.h):
+// - 尺寸: 4.26" 
+// - 解析度: 800x480 像素 (寬 x 高)
+// - 控制器: SSD1677
+// - 支援: 快速部分更新、全螢幕更新
+// - 電源開啟時間: 100ms
+// - 電源關閉時間: 200ms
 
 // WeMos D1 Mini 腳位配置
 #define EPD_CS    15  // D8 - CS (需要 3.3k 下拉電阻到 GND)
@@ -27,27 +30,45 @@
 // 包含必要的 GxEPD2 標頭檔
 #include <GxEPD2_BW.h>
 
-// 檢查是否有 GDEQ0426T82 的專用驅動程式
-#if defined(GxEPD2_DRIVER_CLASS) && defined(GxEPD2_426_GDEQ0426T82)
-  // 使用專用的 GDEQ0426T82 驅動程式
-  #define GxEPD2_DISPLAY_CLASS GxEPD2_BW
-  #define GxEPD2_DRIVER_CLASS GxEPD2_426_GDEQ0426T82
-  #define MAX_DISPLAY_BUFFER_SIZE 65536ul
-#elif defined(GxEPD2_426)
-  // 使用 4.26" 通用驅動程式
-  #define GxEPD2_DISPLAY_CLASS GxEPD2_BW
-  #define GxEPD2_DRIVER_CLASS GxEPD2_426
-  #define MAX_DISPLAY_BUFFER_SIZE 65536ul
-#elif defined(GxEPD2_420)
-  // 使用 4.20" 相容驅動程式作為備選
-  #define GxEPD2_DISPLAY_CLASS GxEPD2_BW
-  #define GxEPD2_DRIVER_CLASS GxEPD2_420
-  #define MAX_DISPLAY_BUFFER_SIZE 65536ul
-#else
-  // 使用基本的 GxEPD2_BW 驅動程式
-  #define GxEPD2_DISPLAY_CLASS GxEPD2_BW
-  #define GxEPD2_DRIVER_CLASS GxEPD2_BW
-  #define MAX_DISPLAY_BUFFER_SIZE 65536ul
+// 使用專用的 GDEQ0426T82 驅動程式
+#include <gdeq/GxEPD2_426_GDEQ0426T82.h>
+
+// 顯示器類別配置
+#define GxEPD2_DISPLAY_CLASS GxEPD2_BW
+#define GxEPD2_DRIVER_CLASS GxEPD2_426_GDEQ0426T82
+#define MAX_DISPLAY_BUFFER_SIZE 65536ul
+
+// 顯示器實際尺寸
+#define DISPLAY_WIDTH  800
+#define DISPLAY_HEIGHT 480
+
+// 驅動程式資訊
+#define DRIVER_NAME "GxEPD2_426_GDEQ0426T82"
+#define CONTROLLER_TYPE "SSD1677"
+#define DISPLAY_TYPE "GDEQ0426T82"
+
+// 功能支援 (根據 GxEPD2_426_GDEQ0426T82.h)
+#define HAS_COLOR false
+#define HAS_PARTIAL_UPDATE true
+#define HAS_FAST_PARTIAL_UPDATE true
+#define USE_FAST_FULL_UPDATE true
+
+// 電源時序
+#define POWER_ON_TIME_MS 100
+#define POWER_OFF_TIME_MS 200
+
+// 顯示器初始化巨集
+#define GDEQ0426T82_DISPLAY_INIT(cs, dc, rst, busy) \
+  GxEPD2_BW<GxEPD2_426_GDEQ0426T82, GxEPD2_426_GDEQ0426T82::HEIGHT> display(GxEPD2_426_GDEQ0426T82(cs, dc, rst, busy))
+
+// 使用說明:
+// 1. 確保安裝了 GxEPD2 函式庫 (by Jean-Marc Zingg)
+// 2. 在主程式中 #include 此檔案
+// 3. 使用 GDEQ0426T82_DISPLAY_INIT 巨集初始化顯示器
+// 4. 或直接使用: 
+//    GxEPD2_BW<GxEPD2_426_GDEQ0426T82, GxEPD2_426_GDEQ0426T82::HEIGHT> display(GxEPD2_426_GDEQ0426T82(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY));
+
+#endif // _GxEPD2_DISPLAY_SELECTION_GDEQ0426T82_H_
 #endif
 
 // ESP8266 記憶體限制考量

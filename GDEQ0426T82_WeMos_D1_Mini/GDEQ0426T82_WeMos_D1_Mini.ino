@@ -2,7 +2,7 @@
  * GDEQ0426T82 E-Paper Display for WeMos D1 Mini (ESP8266)
  * 
  * 硬體連接:
- * - GDEQ0426T82 4.26" 電子紙顯示屏
+ * - GDEQ0426T82 4.26" 電子紙顯示屏 (800x480 像素)
  * - WeMos D1 Mini ESP8266 開發板
  * 
  * 腳位連接 (WeMos D1 Mini → GDEQ0426T82):
@@ -25,7 +25,8 @@
  * - Adafruit GFX Library
  * 
  * 作者: Arduino ESP8266 專案
- * 日期: 2025/1/9
+ * 日期: 2025/7/9
+ * 版本: v2.0 - 使用專用 GDEQ0426T82 驅動程式
  */
 
 // 包含必要的 GxEPD2 庫
@@ -42,30 +43,23 @@
 // SCK  -> D5 (GPIO14) - 自動設定
 // MOSI -> D7 (GPIO13) - 自動設定
 
-// GDEQ0426T82 顯示器配置 (4.26" 480x800 黑白)
-// 由於 GDEQ0426T82 可能沒有專用驅動程式，我們使用相容的驅動程式
-// 根據 GxEPD2 庫文檔，對於 4.26" 顯示器可以嘗試以下驅動程式:
+// GDEQ0426T82 顯示器配置 (4.26" 800x480 黑白)
+// GxEPD2 函式庫包含專用的 GDEQ0426T82 驅動程式
+// 位於: gdeq/GxEPD2_426_GDEQ0426T82.h
 
-// 選項 1: 嘗試 GxEPD2_420 (4.20" 相容)
-#ifdef GxEPD2_420
-  GxEPD2_BW<GxEPD2_420, GxEPD2_420::HEIGHT> display(GxEPD2_420(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY));
-  #define DISPLAY_DRIVER "GxEPD2_420"
-// 選項 2: 嘗試 GxEPD2_420_M01 
-#elif defined(GxEPD2_420_M01)
-  GxEPD2_BW<GxEPD2_420_M01, GxEPD2_420_M01::HEIGHT> display(GxEPD2_420_M01(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY));
-  #define DISPLAY_DRIVER "GxEPD2_420_M01"
-// 選項 3: 使用基本的 2.9" 驅動程式作為測試
-#else
-  // 如果沒有找到合適的驅動程式，使用較小的顯示器進行測試
-  // 注意：這只是為了驗證連線，實際顯示效果可能不正確
-  #include <GxEPD2_290.h>
-  GxEPD2_BW<GxEPD2_290, GxEPD2_290::HEIGHT> display(GxEPD2_290(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY));
-  #define DISPLAY_DRIVER "GxEPD2_290 (測試用)"
-#endif
+// 包含專用的 GDEQ0426T82 驅動程式
+#include <gdeq/GxEPD2_426_GDEQ0426T82.h>
 
-// 顯示器尺寸 (實際 GDEQ0426T82 規格)
-#define ACTUAL_WIDTH  480
-#define ACTUAL_HEIGHT 800
+// 使用專用的 GDEQ0426T82 驅動程式
+GxEPD2_BW<GxEPD2_426_GDEQ0426T82, GxEPD2_426_GDEQ0426T82::HEIGHT> display(GxEPD2_426_GDEQ0426T82(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY));
+#define DISPLAY_DRIVER "GxEPD2_426_GDEQ0426T82"
+
+// 顯示器尺寸 (GDEQ0426T82 實際規格)
+// 根據 GxEPD2_426_GDEQ0426T82.h:
+// WIDTH = 800 (source, max 960)
+// HEIGHT = 480 (gates, max 680)
+#define ACTUAL_WIDTH  800
+#define ACTUAL_HEIGHT 480
 
 void setup() {
   Serial.begin(115200);
@@ -83,10 +77,12 @@ void setup() {
   Serial.printf("DIN:  D7 (GPIO%d) - SPI MOSI\n", 13);
   
   // 初始化顯示器
-  display.init(115200); // 使用 2ms 重置脈衝
+  display.init(115200); // 使用 115200 波特率初始化
   
   Serial.println("顯示器初始化完成!");
+  Serial.printf("使用驅動程式: %s\n", DISPLAY_DRIVER);
   Serial.printf("顯示器尺寸: %d x %d\n", display.width(), display.height());
+  Serial.printf("實際規格: %d x %d (GDEQ0426T82)\n", ACTUAL_WIDTH, ACTUAL_HEIGHT);
   
   // 執行顯示測試
   showWelcomeScreen();
@@ -144,7 +140,7 @@ void showWelcomeScreen() {
     
     // 尺寸資訊
     display.setCursor(20, 320);
-    display.print("480 x 800 pixels");
+    display.print("800 x 480 pixels");
     
     display.setCursor(20, 350);
     display.print("4.26 inch");
@@ -223,9 +219,13 @@ void showSystemInfo() {
     
     // 版本資訊
     display.setCursor(20, 490);
-    display.print("GxEPD2 Library");
+    display.print("Driver: ");
+    display.print(DISPLAY_DRIVER);
     
     display.setCursor(20, 520);
+    display.print("GxEPD2 Library");
+    
+    display.setCursor(20, 550);
     display.print("Arduino ESP8266");
     
     // 繪製分隔線
