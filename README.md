@@ -1,233 +1,215 @@
-# ESP8266MOD Arduino 開發 - LED 控制專案
+# ESP8266 電子紙顯示與WiFi控制專案
 
-## 專案簡介
+## 🚀 專案簡介
 
-這個專案示範如何使用 ESP8266MOD 模組進行 Arduino 程式開發，主要功能是控制板載 LED 進行閃爍。專案包含基本和進階的 LED 控制範例。
+這是一個基於 **WeMos D1 Mini (ESP8266)** 的雙功能專案，包含：
 
-## 硬體需求
+1. **GDEQ0426T82 電子紙顯示器** - 4.26吋 480×800 黑白電子紙顯示控制
+2. **WiFi LED 控制系統** - 透過網頁介面遠端控制 LED
 
-- ESP8266MOD 開發板 (如 NodeMCU、Wemos D1 Mini 等)
-- USB 傳輸線 (Micro USB 或 USB-C，依開發板而定)
+專案已完全精簡，僅保留核心功能，適合直接使用和進一步開發。
+
+## 📦 專案結構
+
+```
+epaper_display/
+├── GDEQ0426T82_WeMos_D1_Mini/          # 🎯 電子紙顯示器專案
+│   ├── GDEQ0426T82_WeMos_D1_Mini.ino   # 主程式 (完整功能)
+│   ├── GDEQ0426T82_Basic_Test.ino      # 基本測試程式
+│   ├── GDEQ0426T82_Full_Demo.ino       # 完整示範程式
+│   ├── GxEPD2_display_selection_GDEQ0426T82.h  # 顯示器配置
+│   ├── README.md                       # 詳細使用說明
+│   ├── INSTALLATION_GUIDE.md           # 安裝指南
+│   ├── WIRING_DIAGRAM.md               # 接線圖說明
+│   └── PROJECT_SUMMARY.md              # 專案摘要
+├── wifi_led_control/                   # 🎯 WiFi LED 控制專案
+│   └── wifi_led_control.ino            # WiFi LED 控制程式
+└── README.md                           # 專案總說明
+```
+
+## 🛠️ 硬體需求
+
+### 共同硬體
+- **WeMos D1 Mini** ESP8266 開發板
+- USB 傳輸線 (Micro USB)
 - 電腦 (Windows/Mac/Linux)
 
-## 軟體需求
+### 電子紙顯示器專案額外需求
+- **GDEQ0426T82** 4.26吋 480×800 電子紙顯示器
+- 杜邦線或連接線
+- **3.3kΩ 電阻** (CS 腳位下拉電阻，必需)
+- **1kΩ 電阻** (RST 腳位上拉電阻，建議)
 
-### 1. 安裝 Arduino IDE
+## ⚡ 快速開始
 
-1. 下載並安裝 [Arduino IDE](https://www.arduino.cc/en/software) (版本 2.0 或以上)
-2. 啟動 Arduino IDE
+### 1. 環境設定
 
-### 2. 安裝 ESP8266 開發板支援
+#### 安裝 Arduino IDE
+1. 下載並安裝 [Arduino IDE](https://www.arduino.cc/en/software) (版本 2.0+)
 
+#### 安裝 ESP8266 開發板支援
 1. 開啟 Arduino IDE
-2. 前往 **檔案** → **偏好設定**
-3. 在 **額外的開發板管理員網址** 中加入：
+2. **檔案** → **偏好設定**
+3. **額外的開發板管理員網址** 加入：
    ```
    http://arduino.esp8266.com/stable/package_esp8266com_index.json
    ```
-4. 前往 **工具** → **開發板** → **開發板管理員**
-5. 搜尋 "ESP8266" 並安裝 **ESP8266 by ESP8266 Community**
+4. **工具** → **開發板** → **開發板管理員**
+5. 搜尋 "ESP8266" → 安裝 **ESP8266 by ESP8266 Community**
 
-### 3. 選擇開發板
+#### 選擇開發板
+**工具** → **開發板** → **LOLIN(WEMOS) D1 R2 & mini**
 
-1. 前往 **工具** → **開發板**
-2. 選擇對應的 ESP8266 開發板：
-   - **NodeMCU 1.0 (ESP-12E Module)**
-   - **LOLIN(WEMOS) D1 R2 & mini**
-   - **Generic ESP8266 Module**
+### 2. 必要函式庫安裝
 
-## LED 腳位說明
+#### 電子紙顯示器專案需要的函式庫
+**工具** → **管理程式庫** → 搜尋並安裝：
+- **GxEPD2** by Jean-Marc Zingg
+- **Adafruit GFX Library**
 
-| 開發板類型 | 板載 LED 腳位 | GPIO 編號 | 備註 |
-|-----------|--------------|----------|------|
-| NodeMCU   | D0           | GPIO16   | 板載藍色 LED |
-| Wemos D1 Mini | D4       | GPIO2    | 板載藍色 LED |
-| 通用      | LED_BUILTIN  | 自動偵測  | 由 Arduino 核心定義 |
+#### WiFi LED 控制專案函式庫
+ESP8266 核心已包含所需函式庫：
+- `ESP8266WiFi.h`
+- `ESP8266WebServer.h`
 
-**重要**：ESP8266 的板載 LED 通常是低電位觸發 (LOW = 開啟, HIGH = 關閉)
+## 🖥️ 專案使用說明
 
-## 專案結構
+### 📺 GDEQ0426T82 電子紙顯示器
 
+#### 硬體連接 (WeMos D1 Mini → GDEQ0426T82)
 ```
-esp8266-led-control/
-├── README.md                    # 專案說明文件
-├── basic_led_blink/
-│   └── basic_led_blink.ino     # 基本 LED 閃爍程式
-├── advanced_led_control/
-│   └── advanced_led_control.ino # 進階 LED 控制程式
-└── examples/
-    ├── breathing_led.ino       # 呼吸燈效果
-    └── multi_pattern.ino       # 多種閃爍模式
+BUSY → D2 (GPIO4)    - 忙碌偵測腳位
+RST  → D1 (GPIO5)    - 重置腳位 + 1kΩ電阻到3.3V
+DC   → D3 (GPIO0)    - 資料/命令選擇腳位
+CS   → D8 (GPIO15)   - SPI片選腳位 + 3.3kΩ電阻到GND ⚠️
+CLK  → D5 (GPIO14)   - SPI時脈腳位 (SCK)
+DIN  → D7 (GPIO13)   - SPI資料腳位 (MOSI)
+GND  → GND           - 接地
+3.3V → 3.3V          - 電源 (3.3V)
 ```
 
-## 快速開始
+> ⚠️ **重要**：CS 腳位 (GPIO15) 必須加 3.3kΩ 下拉電阻到 GND，否則 ESP8266 無法正常開機！
 
-### 1. 基本 LED 閃爍
+#### 程式功能
+- **歡迎畫面**：顯示基本硬體資訊
+- **系統資訊**：ESP8266 晶片資訊和腳位配置
+- **圖案測試**：矩形、圓形、線條、三角形、文字、網格、像素等
+- **錯誤處理**：顯示錯誤訊息
 
-開啟 `basic_led_blink/basic_led_blink.ino` 檔案，這是最簡單的 LED 控制程式：
+#### 快速測試
+1. 按照接線圖連接硬體
+2. 開啟 `GDEQ0426T82_WeMos_D1_Mini/GDEQ0426T82_WeMos_D1_Mini.ino`
+3. 上傳程式到 WeMos D1 Mini
+4. 打開序列埠監控視窗 (115200 baud)
+5. 觀察電子紙顯示器顯示測試內容
 
-- LED 每秒閃爍一次
-- 透過序列埠輸出狀態訊息
-- 適合初學者學習基本概念
+### 📶 WiFi LED 控制系統
 
-### 2. 進階 LED 控制
+#### 功能特色
+- **WiFi 熱點模式**：ESP8266 建立 WiFi 熱點
+- **網頁控制介面**：透過瀏覽器控制 LED
+- **即時狀態回饋**：LED 狀態即時更新
+- **連線狀態指示**：連線時恆亮，斷線時閃爍
 
-開啟 `advanced_led_control/advanced_led_control.ino` 檔案，提供更多功能：
+#### 快速使用
+1. 開啟 `wifi_led_control/wifi_led_control.ino`
+2. 上傳程式到 WeMos D1 Mini
+3. 手機或電腦連接 WiFi 熱點：`DYJ_LED_Control`
+4. 密碼：`12345678`
+5. 瀏覽器開啟：`http://192.168.4.1`
+6. 透過網頁介面控制 LED 開關
 
-- 可調整閃爍頻率 (1-9 速度等級)
-- 序列埠指令控制
-- 非阻塞式程式設計
-- 即時狀態回饋
+#### WiFi 設定
+預設為熱點模式，如需連接現有 WiFi，請編輯程式：
+```cpp
+// 取消註解並填入您的 WiFi 資訊
+const char* wifi_ssid = "您的WiFi名稱";
+const char* wifi_password = "您的WiFi密碼";
+```
 
-## 上傳程式步驟
+## 🔧 上傳程式步驟
 
-1. 使用 USB 線連接 ESP8266 開發板到電腦
-2. 在 Arduino IDE 中選擇正確的 **連接埠** (工具 → 連接埠)
-3. 選擇正確的 **開發板** (工具 → 開發板)
-4. 設定開發板參數：
+1. **連接硬體**：USB 線連接 WeMos D1 Mini 到電腦
+2. **選擇連接埠**：**工具** → **連接埠** → 選擇對應 COM 埠
+3. **設定參數**：
    - **CPU Frequency**: 80 MHz
-   - **Flash Size**: 4MB (根據實際開發板調整)
+   - **Flash Size**: 4MB
    - **Upload Speed**: 115200
-5. 開啟 .ino 檔案
-6. 點擊 **上傳** 按鈕 (→)
-7. 等待編譯和上傳完成
+4. **編譯上傳**：點擊上傳按鈕 (→)
+5. **監控輸出**：**工具** → **序列埠監控視窗** (115200 baud)
 
-## 序列埠監控
-
-1. 上傳完成後，開啟 **工具** → **序列埠監控視窗**
-2. 設定鮑率為 **115200**
-3. 觀察程式運行狀態和除錯訊息
-
-### 進階控制指令
-
-在序列埠監控視窗中輸入以下指令：
-
-| 指令 | 功能 |
-|------|------|
-| 1-9  | 設定閃爍速度 (1=最快, 9=最慢) |
-| s    | 停止閃爍 |
-| r    | 恢復閃爍 |
-| i    | 顯示系統資訊 |
-
-## 故障排除
+## 🐛 故障排除
 
 ### 常見問題
 
-1. **無法連接到開發板**
-   - 檢查 USB 線連接是否穩固
-   - 確認驅動程式已安裝 (CH340/CP2102/FTDI)
-   - 嘗試按住 FLASH 按鈕再上傳
-   - 檢查是否選擇了正確的連接埠
+#### 1. 無法連接到開發板
+- ✅ 檢查 USB 線連接
+- ✅ 確認 CP2102/CH340 驅動程式已安裝
+- ✅ 選擇正確的連接埠
+- ✅ 按住 FLASH 按鈕重新上傳
 
-2. **編譯錯誤**
-   - 確認已安裝 ESP8266 開發板套件
-   - 檢查選擇的開發板型號是否正確
-   - 確認 Arduino IDE 版本相容性
+#### 2. 電子紙顯示器無反應
+- ✅ 確認所有接線正確
+- ✅ 檢查 CS 腳位是否有 3.3kΩ 下拉電阻
+- ✅ 確認電源為 3.3V (不是 5V)
+- ✅ 檢查 GxEPD2 函式庫是否已安裝
 
-3. **LED 不閃爍**
-   - 確認腳位定義正確
-   - 檢查電源供應是否穩定
-   - 確認程式已成功上傳
+#### 3. WiFi 連線問題
+- ✅ 確認 WiFi 名稱和密碼正確
+- ✅ 檢查手機是否連接到正確的熱點
+- ✅ 確認 IP 位址：`192.168.4.1`
+- ✅ 重啟 ESP8266 重新建立熱點
 
-4. **序列埠無法開啟**
-   - 檢查其他程式是否佔用序列埠
-   - 確認鮑率設定為 115200
-   - 重新插拔 USB 線
+#### 4. 編譯錯誤
+- ✅ 確認 ESP8266 開發板套件已安裝
+- ✅ 檢查必要函式庫是否已安裝
+- ✅ 確認選擇了正確的開發板型號
 
-### 除錯技巧
+## 📚 進階開發
 
-- 使用 `Serial.println()` 輸出除錯訊息
-- 檢查 LED_BUILTIN 常數值：`Serial.println(LED_BUILTIN);`
-- 測試 GPIO 腳位：使用三用電表量測電壓變化
-- 確認開發板規格：不同廠牌的 LED 腳位可能不同
+### 電子紙顯示器擴展
+- 自訂字型和圖片顯示
+- 部分更新功能 (如果支援)
+- 整合感測器資料顯示
+- 低功耗模式實作
 
-## 進階開發
+### WiFi 控制系統擴展
+- MQTT 協議整合
+- 多 LED 或 RGB LED 控制
+- 感測器資料即時顯示
+- 移動 App 開發
 
-### 1. WiFi 整合
+### 專案整合
+將兩個專案整合成一個完整系統：
+- 電子紙顯示 WiFi 狀態和控制介面
+- 透過網頁控制電子紙顯示內容
+- 感測器資料收集與顯示
 
-將 LED 控制與 WiFi 功能結合：
-
-```cpp
-#include <ESP8266WiFi.h>
-#include <ESP8266WebServer.h>
-
-// WiFi 設定
-const char* ssid = "你的WiFi名稱";
-const char* password = "你的WiFi密碼";
-
-// 網頁伺服器
-ESP8266WebServer server(80);
-```
-
-### 2. 呼吸燈效果
-
-使用 PWM 控制實現呼吸燈：
-
-```cpp
-// 使用 analogWrite() 控制 LED 亮度
-for (int brightness = 0; brightness <= 255; brightness++) {
-  analogWrite(LED_BUILTIN, 255 - brightness); // ESP8266 反向邏輯
-  delay(10);
-}
-```
-
-### 3. 多重模式
-
-實作多種閃爍模式：
-- 單次閃爍
-- 雙重閃爍
-- 漸變效果
-- 隨機模式
-
-## 電路擴展
-
-### 外接 LED
-
-如果要控制外接 LED，建議使用以下腳位：
-
-| 腳位 | GPIO | 建議用途 |
-|------|------|----------|
-| D1   | GPIO5 | 數位輸出 |
-| D2   | GPIO4 | 數位輸出 |
-| D5   | GPIO14 | PWM 輸出 |
-| D6   | GPIO12 | PWM 輸出 |
-
-### 電路連接
-
-```
-ESP8266  →  LED
-GPIO5    →  電阻 220Ω → LED 正極
-GND      →  LED 負極
-```
-
-## 相關資源
+## 📖 相關資源
 
 ### 官方文件
 - [ESP8266 Arduino Core](https://arduino-esp8266.readthedocs.io/)
-- [ESP8266 腳位對照表](https://randomnerdtutorials.com/esp8266-pinout-reference-gpios/)
-- [Arduino 官方教學](https://www.arduino.cc/en/Tutorial/HomePage)
+- [GxEPD2 函式庫文件](https://github.com/ZinggJM/GxEPD2)
+- [WeMos D1 Mini 腳位圖](https://randomnerdtutorials.com/esp8266-pinout-reference-gpios/)
 
-### 社群資源
+### 技術支援
 - [ESP8266 Community Forum](https://www.esp8266.com/)
-- [Arduino Forum ESP8266 Section](https://forum.arduino.cc/c/hardware/esp8266/25)
-- [Random Nerd Tutorials](https://randomnerdtutorials.com/projects-esp8266/)
+- [Arduino Forum ESP8266](https://forum.arduino.cc/c/hardware/esp8266/25)
+- [GxEPD2 GitHub Issues](https://github.com/ZinggJM/GxEPD2/issues)
 
-### 開發工具
-- [VS Code + PlatformIO](https://platformio.org/) - 替代 Arduino IDE
-- [ESP8266 Flash Download Tool](https://www.espressif.com/en/support/download/other-tools) - 韌體燒錄工具
+## 📄 版本資訊
 
-## 授權聲明
+- **版本**: v2.0
+- **更新日期**: 2025年7月
+- **作者**: Arduino ESP8266 專案團隊
+- **授權**: MIT License
 
-此專案採用 MIT 授權條款，您可以自由使用、修改和分發。
+## 🤝 貢獻
 
-## 貢獻指南
-
-歡迎提交 Issue 和 Pull Request 來改善這個專案。
+歡迎提交 Issue 和 Pull Request 來改善專案！
 
 ---
 
-**作者**：Arduino 愛好者  
-**更新日期**：2025年7月  
-**版本**：v1.0
+> 💡 **提示**：建議先從 WiFi LED 控制開始測試，確認基本功能正常後再進行電子紙顯示器的硬體連接。
 
-如有任何問題，請透過 GitHub Issues 與我們聯繫。
+如有任何問題，請查看各專案資料夾中的詳細說明文件，或透過 GitHub Issues 聯繫我們。
