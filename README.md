@@ -55,16 +55,9 @@ esp8266-led-control/
 │   └── basic_led_blink.ino     # 基本 LED 閃爍程式
 ├── advanced_led_control/
 │   └── advanced_led_control.ino # 進階 LED 控制程式
-├── bluetooth_led_control/
-│   └── bluetooth_led_control.ino # 藍芽 LED 控制程式 (需外接模組)
-├── wifi_led_control/
-│   └── wifi_led_control.ino    # WiFi LED 控制程式 (網頁控制)
-├── epaper_display/
-│   └── epaper_display.ino      # E-Paper 顯示器控制程式 ⭐ 新增
 └── examples/
     ├── breathing_led.ino       # 呼吸燈效果
-    ├── multi_pattern.ino       # 多種閃爍模式
-    └── bluetooth_test.ino      # 藍芽模組測試
+    └── multi_pattern.ino       # 多種閃爍模式
 ```
 
 ## 快速開始
@@ -85,90 +78,6 @@ esp8266-led-control/
 - 序列埠指令控制
 - 非阻塞式程式設計
 - 即時狀態回饋
-
-### 3. 藍芽 LED 控制
-
-開啟 `bluetooth_led_control/bluetooth_led_control.ino` 檔案，實現藍芽無線控制：
-
-**⚠️ 重要說明**：ESP8266 **沒有內建藍芽模組**，需要外接 HC-05 或 HC-06 藍芽模組。
-
-- **藍芽設備名稱**：DYJ_BT
-- **已連接狀態**：LED 恆亮
-- **未連接狀態**：LED 閃爍 (亮200ms，暗800ms)
-- **序列埠監控**：顯示連接狀態和統計資訊
-- **藍芽指令**：支援透過藍芽發送指令控制
-
-#### 藍芽模組連接 (HC-05/HC-06)
-
-| 藍芽模組 | ESP8266 | 說明 |
-|----------|---------|------|
-| VCC      | 3.3V    | 電源正極 |
-| GND      | GND     | 電源負極 |
-| RX       | D1 (GPIO5) | 資料接收 |
-| TX       | D2 (GPIO4) | 資料傳送 |
-
-### 4. WiFi LED 控制 ⭐ 推薦
-
-開啟 `wifi_led_control/wifi_led_control.ino` 檔案，使用 WiFi 控制（無需額外硬體）：
-
-- **WiFi 熱點名稱**：DYJ_LED_Control
-- **連接密碼**：12345678
-- **網頁控制**：http://192.168.4.1
-- **手機連接時**：LED 恆亮
-- **手機斷線時**：LED 閃爍 (亮200ms，暗800ms)
-- **即時網頁控制**：開啟/關閉/切換 LED
-
-#### WiFi 控制使用步驟
-
-1. 上傳程式到 ESP8266
-2. 手機連接 WiFi 熱點 "DYJ_LED_Control" (密碼: 12345678)
-3. 瀏覽器開啟 http://192.168.4.1
-4. 透過網頁控制 LED
-5. 斷線後 LED 自動開始閃爍
-
-### 5. E-Paper 顯示器控制 ⭐ 新功能
-
-開啟 `epaper_display/epaper_display.ino` 檔案，控制 E-Paper 顯示器：
-
-- **顯示器型號**：GDEQ0426T82 (4.2 寸)
-- **驅動IC**：SSD1677
-- **解析度**：800x480 像素
-- **介面**：SPI
-- **功能**：文字、圖形、圖片顯示
-
-#### E-Paper 硬體連接
-
-| E-Paper | ESP8266 | 功能 |
-|---------|---------|------|
-| VCC     | 3.3V    | 電源 |
-| GND     | GND     | 接地 |
-| DIN     | D7 (GPIO13) | SPI 資料 |
-| CLK     | D5 (GPIO14) | SPI 時脈 |
-| CS      | D8 (GPIO15) | 晶片選擇 |
-| DC      | D3 (GPIO0)  | 資料/命令 |
-| RST     | D4 (GPIO2)  | 重置 |
-| BUSY    | D2 (GPIO4)  | 忙碌狀態 |
-
-#### E-Paper 控制指令
-
-| 指令 | 功能 |
-|------|------|
-| `help` | 顯示說明 |
-| `clear` | 清空顯示器 |
-| `test` | 顯示測試圖案 |
-| `welcome` | 顯示歡迎訊息 |
-| `info` | 顯示系統資訊 |
-| `text <內容>` | 顯示自訂文字 |
-| `sleep` | 進入深度睡眠 |
-
-#### 藍芽配對步驟 (需外接模組)
-
-1. 上傳程式到 ESP8266
-2. 開啟手機藍芽功能
-3. 搜尋藍芽設備 "DYJ_BT"
-4. 配對時如需PIN碼，請輸入 "1234"
-5. 連接成功後 LED 會恆亮
-6. 斷線後 LED 會開始閃爍
 
 ## 上傳程式步驟
 
@@ -191,8 +100,6 @@ esp8266-led-control/
 
 ### 進階控制指令
 
-#### 基本 LED 控制指令
-
 在序列埠監控視窗中輸入以下指令：
 
 | 指令 | 功能 |
@@ -201,17 +108,6 @@ esp8266-led-control/
 | s    | 停止閃爍 |
 | r    | 恢復閃爍 |
 | i    | 顯示系統資訊 |
-
-#### 藍芽 LED 控制指令
-
-| 指令 | 功能 |
-|------|------|
-| status (s) | 顯示目前連接狀態和 LED 狀態 |
-| info (i)   | 顯示系統資訊和藍芽設定 |
-| help (h)   | 顯示指令說明 |
-| test       | 測試藍芽模組連接 |
-| clear      | 清除統計資料 |
-| reset (r)  | 重新啟動系統 |
 
 ## 故障排除
 
@@ -247,30 +143,7 @@ esp8266-led-control/
 
 ## 進階開發
 
-### 1. 藍芽整合
-
-將 LED 控制與藍芽功能結合，實現無線控制：
-
-```cpp
-#include <SoftwareSerial.h>
-
-// 藍芽模組連接
-SoftwareSerial bluetooth(D1, D2); // RX, TX
-
-void setup() {
-  bluetooth.begin(9600);
-  bluetooth.print("AT+NAME=DYJ_BT"); // 設定藍芽名稱
-}
-
-void loop() {
-  if (bluetooth.available()) {
-    String command = bluetooth.readString();
-    // 處理藍芽指令
-  }
-}
-```
-
-### 2. WiFi 整合
+### 1. WiFi 整合
 
 將 LED 控制與 WiFi 功能結合：
 
@@ -286,7 +159,7 @@ const char* password = "你的WiFi密碼";
 ESP8266WebServer server(80);
 ```
 
-### 3. 呼吸燈效果
+### 2. 呼吸燈效果
 
 使用 PWM 控制實現呼吸燈：
 
@@ -298,7 +171,7 @@ for (int brightness = 0; brightness <= 255; brightness++) {
 }
 ```
 
-### 4. 多重模式
+### 3. 多重模式
 
 實作多種閃爍模式：
 - 單次閃爍
@@ -353,7 +226,7 @@ GND      →  LED 負極
 
 ---
 
-**作者**：DYJ Hsieh  
+**作者**：Arduino 愛好者  
 **更新日期**：2025年7月  
 **版本**：v1.0
 

@@ -16,7 +16,7 @@
   - ESP8266MOD 開發板 (NodeMCU、Wemos D1 Mini 等)
   - USB 傳輸線
   
-  作者：DYJ Hsieh
+  作者：Arduino 愛好者
   日期：2025年7月
   版本：v1.0
 */
