@@ -42,37 +42,64 @@ void setup() {
   Serial.printf("CPU 頻率: %d MHz\n", ESP.getCpuFreqMHz());
   Serial.println();
   
-  // 腳位設定
-  Serial.println("--- 設定腳位 ---");
+  // 腳位設定與硬體檢查
+  Serial.println("--- 設定腳位與硬體檢查 ---");
   pinMode(EPD_BUSY, INPUT);
   pinMode(EPD_RST, OUTPUT);
   pinMode(EPD_DC, OUTPUT);
   pinMode(EPD_CS, OUTPUT);
   
-  digitalWrite(EPD_RST, HIGH);
-  digitalWrite(EPD_DC, HIGH);
-  digitalWrite(EPD_CS, HIGH);
+  // 初始狀態設定
+  digitalWrite(EPD_CS, HIGH);    // CS 預設為 HIGH
+  digitalWrite(EPD_DC, HIGH);    // DC 預設為 HIGH
+  digitalWrite(EPD_RST, HIGH);   // RST 預設為 HIGH
+  
+  delay(100);  // 等待腳位穩定
   
   Serial.println("腳位配置:");
   Serial.printf("  BUSY: D2 (GPIO%d) - 輸入\n", EPD_BUSY);
   Serial.printf("  RST:  D1 (GPIO%d) - 輸出\n", EPD_RST);
   Serial.printf("  DC:   D3 (GPIO%d) - 輸出\n", EPD_DC);
   Serial.printf("  CS:   D8 (GPIO%d) - 輸出\n", EPD_CS);
-  Serial.println("腳位設定完成");
   
-  // 顯示當前腳位狀態
-  Serial.println("當前腳位狀態:");
-  Serial.printf("  BUSY: %s\n", digitalRead(EPD_BUSY) ? "HIGH" : "LOW");
-  Serial.printf("  RST:  %s\n", digitalRead(EPD_RST) ? "HIGH" : "LOW");
-  Serial.printf("  DC:   %s\n", digitalRead(EPD_DC) ? "HIGH" : "LOW");
-  Serial.printf("  CS:   %s\n", digitalRead(EPD_CS) ? "HIGH" : "LOW");
+  // 硬體重置序列
+  Serial.println("執行硬體重置序列...");
+  digitalWrite(EPD_RST, LOW);   // 拉低 RST
+  delay(200);                   // 保持 200ms
+  digitalWrite(EPD_RST, HIGH);  // 拉高 RST
+  delay(200);                   // 等待 200ms
+  
+  // 檢查 BUSY 腳位狀態
+  Serial.println("硬體狀態檢查:");
+  for (int i = 0; i < 5; i++) {
+    Serial.printf("  檢查 %d: BUSY=%s, RST=%s, DC=%s, CS=%s\n", 
+                  i+1,
+                  digitalRead(EPD_BUSY) ? "HIGH" : "LOW",
+                  digitalRead(EPD_RST) ? "HIGH" : "LOW", 
+                  digitalRead(EPD_DC) ? "HIGH" : "LOW",
+                  digitalRead(EPD_CS) ? "HIGH" : "LOW");
+    delay(500);
+  }
+  
+  // 如果 BUSY 一直是 LOW，可能是硬體問題
+  if (digitalRead(EPD_BUSY) == LOW) {
+    Serial.println("[警告] BUSY pin 持續為 LOW");
+    Serial.println("可能原因:");
+    Serial.println("1. BUSY 腳位連接錯誤");
+    Serial.println("2. EPD 模組未正確供電");
+    Serial.println("3. EPD 模組故障");
+    Serial.println("4. 線路短路或接觸不良");
+    Serial.println("建議檢查硬體連接！");
+  }
+  
+  Serial.println("腳位設定完成");
   Serial.println();
   
   // 初始化 GxEPD2 顯示器
   Serial.println("--- 初始化 GxEPD2 顯示器 ---");
   // ESP8266 不支援 try-catch，直接執行初始化
   display.init(115200, true, 2, false);
-  Serial.println("✅ GxEPD2 顯示器初始化成功！");
+  Serial.println("[OK] GxEPD2 顯示器初始化成功！");
   Serial.printf("顯示器尺寸: %d x %d 像素\n", display.width(), display.height());
   Serial.printf("顯示器型號: GDEQ0426T82 (4.26\" 黑白電子紙)\n");
   Serial.printf("解析度: 480 x 800 像素 (理論值)\n");
@@ -88,10 +115,22 @@ void setup() {
 void loop() {
   static int testStep = 0;
   static unsigned long lastTest = 0;
+  static bool hasCheckedPartialUpdate = false;
   
   if (millis() - lastTest > 8000) {  // 改為每 8 秒執行一次，增加間隔
     lastTest = millis();
     testStep++;
+    
+    // 檢查部分更新能力（只檢查一次）
+    if (!hasCheckedPartialUpdate && testStep == 1) {
+      Serial.println("=== 檢查 EPD 部分更新能力 ===");
+      Serial.println("EPD 面板類型: GDEQ0426T82 (SSD1677)");
+      Serial.println("驅動程式: GxEPD2_426_GDEQ0426T82");
+      Serial.println("理論上支援部分更新功能");
+      Serial.println("注意: 部分更新需要先有完整背景圖像");
+      Serial.println("=====================================");
+      hasCheckedPartialUpdate = true;
+    }
     
     // 清除序列埠緩衝區，確保輸出乾淨
     Serial.flush();
@@ -141,8 +180,17 @@ void testClearScreen() {
   display.setRotation(0);
   display.fillScreen(GxEPD_WHITE);
   display.display(false);  // 全螢幕更新
-  waitForDisplayReady();   // 等待顯示完成
-  Serial.println("✅ 白屏測試完成");
+  
+  // 檢查是否需要等待 BUSY
+  if (digitalRead(EPD_BUSY) == HIGH) {
+    waitForDisplayReady();   // 只有在 BUSY 為 HIGH時才等待
+  } else {
+    Serial.println("BUSY pin 為 LOW，跳過等待，使用固定延遲...");
+    delay(5000);  // 使用固定的 5 秒延遲
+    Serial.println("固定延遲完成");
+  }
+  
+  Serial.println("[OK] 白屏測試完成");
 }
 
 void testDrawText() {
@@ -163,7 +211,7 @@ void testDrawText() {
   
   display.display(false);
   waitForDisplayReady();   // 等待顯示完成
-  Serial.println("✅ 文字測試完成");
+  Serial.println("[OK] 文字測試完成");
 }
 
 void testDrawShapes() {
@@ -201,7 +249,7 @@ void testDrawShapes() {
   
   display.display(false);
   waitForDisplayReady();   // 等待顯示完成
-  Serial.println("✅ 圖形測試完成");
+  Serial.println("[OK] 圖形測試完成");
   Serial.flush();
 }
 
@@ -209,18 +257,39 @@ void testPartialUpdate() {
   Serial.println("測試 4: 部分更新");
   Serial.flush();
   
-  // 先確保螢幕狀態正確
+  // 步驟 1: 先建立完整背景圖像
+  Serial.println("步驟 1: 建立背景圖像");
   display.setRotation(0);
+  display.fillScreen(GxEPD_WHITE);
+  display.setTextColor(GxEPD_BLACK);
+  display.setFont(&FreeMonoBold9pt7b);
+  
+  // 在螢幕上畫一些背景內容
+  display.setCursor(10, 50);
+  display.println("Background Content");
+  display.setCursor(10, 100);
+  display.println("Ready for partial update");
+  display.drawRect(5, 5, display.width()-10, display.height()-10, GxEPD_BLACK);
+  
+  display.display(false);  // 先全螢幕顯示背景
+  waitForDisplayReady();
+  Serial.println("背景圖像建立完成");
+  
+  // 步驟 2: 等待一下讓使用者看到背景
+  delay(2000);
+  
+  // 步驟 3: 執行部分更新
+  Serial.println("步驟 2: 執行部分更新");
   
   // 取得螢幕尺寸
   int screenWidth = display.width();
   int screenHeight = display.height();
   
-  // 設定部分更新區域 - 下半部區域
-  int updateX = 10;
-  int updateY = screenHeight * 2 / 3;  // 下方 1/3 處開始
-  int updateWidth = screenWidth - 20;  // 留邊界
-  int updateHeight = screenHeight / 3 - 10;  // 高度為螢幕的 1/3
+  // 設定部分更新區域 - 下半部區域（較大的區域更容易看到效果）
+  int updateX = 20;
+  int updateY = screenHeight / 2;  // 從中間開始
+  int updateWidth = screenWidth - 40;  // 留更多邊界
+  int updateHeight = screenHeight / 2 - 20;  // 下半部
   
   Serial.print("部分更新區域: ");
   Serial.print(updateX);
@@ -231,26 +300,35 @@ void testPartialUpdate() {
   Serial.print("x");
   Serial.println(updateHeight);
   
+  // 設定部分更新視窗
   display.setPartialWindow(updateX, updateY, updateWidth, updateHeight);
-  display.fillScreen(GxEPD_WHITE);
-  display.setTextColor(GxEPD_BLACK);
+  
+  // 在部分更新區域繪製新內容（相對座標）
+  display.fillScreen(GxEPD_BLACK);  // 用黑色背景讓效果更明顯
+  display.setTextColor(GxEPD_WHITE);
   display.setFont(&FreeMonoBold9pt7b);
   
-  // 繪製邊框以確認更新區域
-  display.drawRect(updateX, updateY, updateWidth, updateHeight, GxEPD_BLACK);
+  // 繪製白色邊框
+  display.drawRect(2, 2, updateWidth-4, updateHeight-4, GxEPD_WHITE);
   
-  // 顯示時間戳記
-  display.setCursor(updateX + 10, updateY + 30);
-  display.println("Partial Update Test");
-  display.setCursor(updateX + 10, updateY + 60);
+  // 顯示時間戳記 (使用相對座標)
+  display.setCursor(10, 30);
+  display.println("PARTIAL UPDATE");
+  display.setCursor(10, 60);
   display.print("Time: ");
-  display.print(millis());
-  display.println(" ms");
-  display.setCursor(updateX + 10, updateY + 90);
+  display.print(millis() / 1000);
+  display.println("s");
+  display.setCursor(10, 90);
   display.print("RAM: ");
   display.print(ESP.getFreeHeap());
-  display.println(" bytes");
+  display.println("B");
+  display.setCursor(10, 120);
+  display.print("Size: ");
+  display.print(updateWidth);
+  display.print("x");
+  display.println(updateHeight);
   
+  // 執行部分更新
   display.display(true);  // 部分更新
   waitForDisplayReady();   // 等待顯示完成
   
@@ -259,7 +337,7 @@ void testPartialUpdate() {
   Serial.print(" x ");
   Serial.print(screenHeight);
   Serial.println(")");
-  Serial.println("✅ 部分更新測試完成");
+  Serial.println("[OK] 部分更新測試完成");
   Serial.flush();
 }
 
@@ -267,17 +345,41 @@ void testPartialUpdateCenter() {
   Serial.println("測試 5: 中央部分更新");
   Serial.flush();
   
-  // 先清除整個螢幕，確保座標系統正確
+  // 步驟 1: 建立背景圖像
+  Serial.println("步驟 1: 建立中央更新背景");
   display.setRotation(0);
   display.fillScreen(GxEPD_WHITE);
-  display.display(false);  // 先全螢幕更新清除
-  waitForDisplayReady();   // 等待清除完成
+  display.setTextColor(GxEPD_BLACK);
+  display.setFont(&FreeMonoBold9pt7b);
   
-  // 計算螢幕中央區域
-  int centerX = display.width() / 4;
-  int centerY = display.height() / 4;
-  int updateWidth = display.width() / 2;
-  int updateHeight = display.height() / 2;
+  // 繪製網格背景以便觀察部分更新效果
+  for (int i = 50; i < display.width(); i += 50) {
+    display.drawLine(i, 0, i, display.height(), GxEPD_BLACK);
+  }
+  for (int i = 50; i < display.height(); i += 50) {
+    display.drawLine(0, i, display.width(), i, GxEPD_BLACK);
+  }
+  
+  display.setCursor(10, 30);
+  display.println("Grid Background");
+  display.setCursor(10, display.height() - 20);
+  display.println("Center update coming...");
+  
+  display.display(false);  // 先全螢幕顯示背景
+  waitForDisplayReady();
+  Serial.println("網格背景建立完成");
+  
+  // 步驟 2: 等待一下
+  delay(3000);
+  
+  // 步驟 3: 執行中央部分更新
+  Serial.println("步驟 2: 執行中央部分更新");
+  
+  // 計算螢幕中央區域（更大的區域）
+  int centerX = display.width() / 6;   // 更靠左一點
+  int centerY = display.height() / 6;  // 更靠上一點
+  int updateWidth = display.width() * 2 / 3;   // 2/3 寬度
+  int updateHeight = display.height() * 2 / 3; // 2/3 高度
   
   Serial.print("螢幕中央更新區域: ");
   Serial.print(centerX);
@@ -290,28 +392,43 @@ void testPartialUpdateCenter() {
   
   // 設定中央部分更新區域
   display.setPartialWindow(centerX, centerY, updateWidth, updateHeight);
-  display.fillScreen(GxEPD_WHITE);
-  display.setTextColor(GxEPD_BLACK);
+  
+  // 用對比色填充，讓效果更明顯
+  display.fillScreen(GxEPD_BLACK);  // 黑色背景
+  display.setTextColor(GxEPD_WHITE);
   display.setFont(&FreeMonoBold9pt7b);
   
-  // 繪製邊框確認更新區域
-  display.drawRect(centerX, centerY, updateWidth, updateHeight, GxEPD_BLACK);
+  // 繪製白色邊框 (使用相對座標)
+  display.drawRect(5, 5, updateWidth-10, updateHeight-10, GxEPD_WHITE);
+  display.drawRect(10, 10, updateWidth-20, updateHeight-20, GxEPD_WHITE);
   
-  // 在中央顯示資訊
-  display.setCursor(centerX + 20, centerY + 40);
+  // 在中央顯示資訊 (使用相對座標)
+  display.setCursor(20, 40);
   display.println("CENTER UPDATE");
-  display.setCursor(centerX + 20, centerY + 70);
+  display.setCursor(20, 70);
+  display.println("SUCCESS!");
+  display.setCursor(20, 100);
   display.print("Region: ");
   display.print(updateWidth);
   display.print("x");
   display.println(updateHeight);
-  display.setCursor(centerX + 20, centerY + 100);
+  display.setCursor(20, 130);
   display.print("Time: ");
-  display.println(millis() / 1000);
+  display.print(millis() / 1000);
+  display.println("s");
+  display.setCursor(20, 160);
+  display.print("Free RAM: ");
+  display.println(ESP.getFreeHeap());
+  
+  // 在角落加上小方塊確認位置
+  display.fillRect(0, 0, 15, 15, GxEPD_WHITE);
+  display.fillRect(updateWidth-15, 0, 15, 15, GxEPD_WHITE);
+  display.fillRect(0, updateHeight-15, 15, 15, GxEPD_WHITE);
+  display.fillRect(updateWidth-15, updateHeight-15, 15, 15, GxEPD_WHITE);
   
   display.display(true);  // 部分更新
   waitForDisplayReady();   // 等待顯示完成
-  Serial.println("✅ 中央部分更新測試完成");
+  Serial.println("[OK] 中央部分更新測試完成");
   Serial.flush();
 }
 
@@ -320,14 +437,64 @@ void waitForDisplayReady() {
   Serial.print("等待顯示器完成...");
   Serial.flush();  // 確保訊息先輸出
   
-  unsigned long timeout = millis() + 10000;  // 10秒超時
-  while (digitalRead(EPD_BUSY) == LOW && millis() < timeout) {
-    Serial.print(".");
-    delay(500);
-    yield();  // 讓 ESP8266 處理其他任務
+  // 記錄開始時間和 BUSY 狀態
+  unsigned long startTime = millis();
+  bool initialBusyState = digitalRead(EPD_BUSY);
+  Serial.print(" (初始BUSY: ");
+  Serial.print(initialBusyState ? "HIGH" : "LOW");
+  Serial.print(") ");
+  
+  // 如果初始狀態就是 LOW，可能是硬體問題
+  if (!initialBusyState) {
+    Serial.println();
+    Serial.println("[注意] BUSY pin 初始狀態為 LOW");
+    Serial.println("這可能表示:");
+    Serial.println("1. EPD 正在執行操作");
+    Serial.println("2. BUSY 腳位連接問題");
+    Serial.println("3. EPD 模組故障");
+    Serial.println("將嘗試等待或跳過...");
   }
   
-  Serial.println(" 完成");
+  unsigned long timeout = millis() + 10000;  // 10秒超時（縮短超時時間）
+  int dotCount = 0;
+  bool busyChanged = false;
+  
+  while (digitalRead(EPD_BUSY) == LOW && millis() < timeout) {
+    Serial.print(".");
+    dotCount++;
+    if (dotCount % 10 == 0) {
+      Serial.print(" ");
+      Serial.print((millis() - startTime) / 1000);
+      Serial.print("s ");
+    }
+    delay(200);  // 縮短延遲
+    yield();  // 讓 ESP8266 處理其他任務
+    
+    // 檢查 BUSY 狀態是否有變化
+    if (digitalRead(EPD_BUSY) != initialBusyState) {
+      busyChanged = true;
+    }
+  }
+  
+  unsigned long elapsedTime = millis() - startTime;
+  bool finalBusyState = digitalRead(EPD_BUSY);
+  
+  Serial.print(" 完成 (耗時: ");
+  Serial.print(elapsedTime);
+  Serial.print("ms, 最終BUSY: ");
+  Serial.print(finalBusyState ? "HIGH" : "LOW");
+  Serial.println(")");
+  
+  if (millis() >= timeout) {
+    Serial.println("[警告] 等待顯示器完成時發生超時");
+    if (!busyChanged) {
+      Serial.println("[建議] BUSY pin 狀態未變化，可能需要檢查硬體連接");
+      Serial.println("   或者該 EPD 模組不使用 BUSY 信號");
+    }
+  } else if (finalBusyState) {
+    Serial.println("[OK] BUSY pin 已變為 HIGH，顯示器應已完成操作");
+  }
+  
   Serial.flush();  // 確保輸出完成
   delay(200);  // 額外等待確保穩定
 }
