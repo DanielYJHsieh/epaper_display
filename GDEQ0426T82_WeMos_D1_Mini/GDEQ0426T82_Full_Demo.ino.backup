@@ -8,12 +8,11 @@
  * 3. 硬體連接正確
  * 4. 電阻已正確安裝
  * 
- * 這個範例假設 GxEPD2 庫已正確安裝並且可以使用 GxEPD2_420 驅動程式
- * 如果 GDEQ0426T82 有專用驅動程式，請修改相關的 #include 和 display 定義
+ * 這個範例使用 GxEPD2 庫的專用 GDEQ0426T82 驅動程式
  */
 
 #include <GxEPD2_BW.h>
-#include <GxEPD2_420.h>  // 使用 4.2" 驅動程式作為 4.26" 的相容選項
+#include <gdeq/GxEPD2_426_GDEQ0426T82.h>  // 專用 GDEQ0426T82 驅動程式
 #include <Fonts/FreeMonoBold9pt7b.h>
 #include <Fonts/FreeMonoBold12pt7b.h>
 #include <Fonts/FreeMonoBold18pt7b.h>
@@ -26,8 +25,8 @@
 // SPI 腳位自動配置: SCK=D5(GPIO14), MOSI=D7(GPIO13)
 
 // ==================== 顯示器物件 ====================
-// 使用 GxEPD2_420 作為 GDEQ0426T82 的相容驅動程式
-GxEPD2_BW<GxEPD2_420, GxEPD2_420::HEIGHT> display(GxEPD2_420(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY));
+// 使用專用 GDEQ0426T82 驅動程式
+GxEPD2_BW<GxEPD2_426_GDEQ0426T82, GxEPD2_426_GDEQ0426T82::HEIGHT> display(GxEPD2_426_GDEQ0426T82(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY));
 
 // ==================== 全域變數 ====================
 int demoStep = 0;

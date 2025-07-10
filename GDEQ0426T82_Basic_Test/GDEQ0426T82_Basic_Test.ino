@@ -37,14 +37,22 @@
 #include <ESP8266WiFi.h>
 #include <SPI.h>
 
-// 嘗試包含 GxEPD2 (如果編譯錯誤，程式仍可執行基本測試)
+// 強制使用 GxEPD2 (已安裝)
+#include <GxEPD2_BW.h>
+#include <gdeq/GxEPD2_426_GDEQ0426T82.h>  // 專用 GDEQ0426T82 驅動程式
+#include <Fonts/FreeMonoBold9pt7b.h>
+#define GXEPD2_AVAILABLE 1
+#define USE_GXEPD2_GDEQ0426T82 1
+
+// 舊的檢測邏輯 (註解)
+/*
 #ifdef __has_include
   #if __has_include(<GxEPD2_BW.h>)
     #include <GxEPD2_BW.h>
-    #include <GxEPD2_420.h>  // 4.2" 驅動程式 (最接近 4.26")
+    #include <gdeq/GxEPD2_426_GDEQ0426T82.h>  // 專用 GDEQ0426T82 驅動程式
     #include <Fonts/FreeMonoBold9pt7b.h>
     #define GXEPD2_AVAILABLE 1
-    #define USE_GXEPD2_420 1
+    #define USE_GXEPD2_GDEQ0426T82 1
   #elif __has_include(<GxEPD2.h>)
     #include <GxEPD2.h>
     #define GXEPD2_AVAILABLE 1
@@ -56,6 +64,7 @@
   // 舊版本編譯器，直接嘗試包含
   #define GXEPD2_AVAILABLE 0
 #endif
+*/
 
 // ==================== 腳位定義 ====================
 const int EPD_BUSY = 4;   // D2 - 忙碌偵測
@@ -70,10 +79,10 @@ const int DISPLAY_WIDTH = 480;
 const int DISPLAY_HEIGHT = 800;
 
 // ==================== GxEPD2 顯示器物件 ====================
-#if GXEPD2_AVAILABLE && USE_GXEPD2_420
-  // 使用 4.2" 驅動程式 (與 4.26" 最相近)
-  GxEPD2_BW<GxEPD2_420, GxEPD2_420::HEIGHT> display(GxEPD2_420(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY));
-  #define DISPLAY_DRIVER_NAME "GxEPD2_420 (4.2\" 相容)"
+#if GXEPD2_AVAILABLE && USE_GXEPD2_GDEQ0426T82
+  // 使用專用 GDEQ0426T82 驅動程式
+  GxEPD2_BW<GxEPD2_426_GDEQ0426T82, GxEPD2_426_GDEQ0426T82::HEIGHT> display(GxEPD2_426_GDEQ0426T82(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY));
+  #define DISPLAY_DRIVER_NAME "GxEPD2_426_GDEQ0426T82 (專用驅動)"
 #elif GXEPD2_AVAILABLE
   // 使用通用驅動程式
   #define DISPLAY_DRIVER_NAME "GxEPD2 通用驅動程式"
@@ -218,17 +227,13 @@ void initializeSPI() {
 void initializeDisplay() {
   Serial.println("\n--- 初始化顯示器 ---");
   
-#if GXEPD2_AVAILABLE && USE_GXEPD2_420
-  try {
-    Serial.println("使用 GxEPD2_420 驅動程式初始化...");
-    display.init(115200, true, 2, false);
-    displayAvailable = true;
-    Serial.println("GxEPD2 顯示器初始化成功");
-    Serial.printf("顯示器尺寸: %d x %d\n", display.width(), display.height());
-  } catch (...) {
-    Serial.println("GxEPD2 初始化失敗，使用基本 SPI 模式");
-    displayAvailable = false;
-  }
+#if GXEPD2_AVAILABLE && USE_GXEPD2_GDEQ0426T82
+  // ESP8266 不支援 try-catch，直接執行
+  Serial.println("使用 GxEPD2_426_GDEQ0426T82 專用驅動程式初始化...");
+  display.init(115200, true, 2, false);
+  displayAvailable = true;
+  Serial.println("GxEPD2 顯示器初始化成功");
+  Serial.printf("顯示器尺寸: %d x %d\n", display.width(), display.height());
 #else
   Serial.println("GxEPD2 不可用，使用基本 SPI 初始化");
   
@@ -404,41 +409,38 @@ void testDisplayResponse() {
 void testDisplayBasicOperation() {
   Serial.println("\n測試 4: 基本顯示操作");
   
-#if GXEPD2_AVAILABLE && USE_GXEPD2_420
-  Serial.println("執行 GxEPD2 基本顯示測試...");
+#if GXEPD2_AVAILABLE && USE_GXEPD2_GDEQ0426T82
+  Serial.println("執行 GxEPD2 GDEQ0426T82 專用驅動顯示測試...");
   
-  try {
-    // 清除螢幕
-    Serial.println("清除螢幕...");
-    display.setRotation(0);
-    display.fillScreen(GxEPD_WHITE);
-    display.display(false); // 部分更新
-    
-    delay(2000);
-    
-    // 繪製簡單圖案
-    Serial.println("繪製測試圖案...");
-    display.fillScreen(GxEPD_WHITE);
-    
-    // 繪製邊框
-    display.drawRect(10, 10, display.width()-20, display.height()-20, GxEPD_BLACK);
-    
-    // 繪製對角線
-    display.drawLine(10, 10, display.width()-10, display.height()-10, GxEPD_BLACK);
-    display.drawLine(display.width()-10, 10, 10, display.height()-10, GxEPD_BLACK);
-    
-    // 繪製中心圓
-    int centerX = display.width() / 2;
-    int centerY = display.height() / 2;
-    display.drawCircle(centerX, centerY, 50, GxEPD_BLACK);
-    
-    display.display(false);
-    
-    Serial.println("基本顯示操作測試完成");
-    
-  } catch (...) {
-    Serial.println("GxEPD2 顯示操作失敗");
-  }
+  // ESP8266 不支援 try-catch，直接執行
+  // 清除螢幕
+  Serial.println("清除螢幕...");
+  display.setRotation(0);
+  display.fillScreen(GxEPD_WHITE);
+  display.display(false); // 部分更新
+  
+  delay(2000);
+  
+  // 繪製簡單圖案
+  Serial.println("繪製測試圖案...");
+  display.fillScreen(GxEPD_WHITE);
+  
+  // 繪製邊框
+  display.drawRect(10, 10, display.width()-20, display.height()-20, GxEPD_BLACK);
+  
+  // 繪製對角線
+  display.drawLine(10, 10, display.width()-10, display.height()-10, GxEPD_BLACK);
+  display.drawLine(display.width()-10, 10, 10, display.height()-10, GxEPD_BLACK);
+  
+  // 繪製中心圓
+  int centerX = display.width() / 2;
+  int centerY = display.height() / 2;
+  display.drawCircle(centerX, centerY, 50, GxEPD_BLACK);
+  
+  display.display(false);
+  
+  Serial.println("基本顯示操作測試完成");
+  
 #else
   Serial.println("GxEPD2 不可用，跳過顯示測試");
 #endif
