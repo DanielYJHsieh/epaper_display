@@ -31,16 +31,15 @@ void setup() {
   delay(1000);
   
   Serial.println("=== GDEQ0426T82 + WeMos D1 Mini 強制 GxEPD2 測試 ===");
-  Serial.printf("編譯時間: %s %s\n", __DATE__, __TIME__);
+  Serial.printf("編譯時間: %s %s\r\n", __DATE__, __TIME__);
   Serial.println();
   
   // 顯示系統資訊
   Serial.println("--- ESP8266 系統資訊 ---");
-  Serial.printf("晶片 ID: 0x%08X\n", ESP.getChipId());
-  Serial.printf("Flash 大小: %d MB\n", ESP.getFlashChipSize() / (1024 * 1024));
-  Serial.printf("可用記憶體: %d bytes\n", ESP.getFreeHeap());
-  Serial.printf("CPU 頻率: %d MHz\n", ESP.getCpuFreqMHz());
-  Serial.println();
+  Serial.printf("晶片 ID: 0x%08X\r\n", ESP.getChipId());
+  Serial.printf("Flash 大小: %d MB\r\n", ESP.getFlashChipSize() / (1024 * 1024));
+  Serial.printf("可用記憶體: %d bytes\r\n", ESP.getFreeHeap());
+  Serial.printf("CPU 頻率: %d MHz\r\n", ESP.getCpuFreqMHz());
   
   // 腳位設定與硬體檢查
   Serial.println("--- 設定腳位與硬體檢查 ---");
@@ -57,10 +56,10 @@ void setup() {
   delay(100);  // 等待腳位穩定
   
   Serial.println("腳位配置:");
-  Serial.printf("  BUSY: D2 (GPIO%d) - 輸入\n", EPD_BUSY);
-  Serial.printf("  RST:  D1 (GPIO%d) - 輸出\n", EPD_RST);
-  Serial.printf("  DC:   D3 (GPIO%d) - 輸出\n", EPD_DC);
-  Serial.printf("  CS:   D8 (GPIO%d) - 輸出\n", EPD_CS);
+  Serial.printf("  BUSY: D2 (GPIO%d) - 輸入\r\n", EPD_BUSY);
+  Serial.printf("  RST:  D1 (GPIO%d) - 輸出\r\n", EPD_RST);
+  Serial.printf("  DC:   D3 (GPIO%d) - 輸出\r\n", EPD_DC);
+  Serial.printf("  CS:   D8 (GPIO%d) - 輸出\r\n", EPD_CS);
   
   // 硬體重置序列
   Serial.println("執行硬體重置序列...");
@@ -72,7 +71,7 @@ void setup() {
   // 檢查 BUSY 腳位狀態
   Serial.println("硬體狀態檢查:");
   for (int i = 0; i < 5; i++) {
-    Serial.printf("  檢查 %d: BUSY=%s, RST=%s, DC=%s, CS=%s\n", 
+  Serial.printf("  檢查 %d: BUSY=%s, RST=%s, DC=%s, CS=%s\r\n", 
                   i+1,
                   digitalRead(EPD_BUSY) ? "HIGH" : "LOW",
                   digitalRead(EPD_RST) ? "HIGH" : "LOW", 
@@ -100,10 +99,10 @@ void setup() {
   // ESP8266 不支援 try-catch，直接執行初始化
   display.init(115200, true, 2, false);
   Serial.println("[OK] GxEPD2 顯示器初始化成功！");
-  Serial.printf("顯示器尺寸: %d x %d 像素\n", display.width(), display.height());
-  Serial.printf("顯示器型號: GDEQ0426T82 (4.26\" 黑白電子紙)\n");
-  Serial.printf("解析度: 480 x 800 像素 (理論值)\n");
-  Serial.printf("實際可用區域: %d x %d 像素\n", display.width(), display.height());
+  Serial.printf("顯示器尺寸: %d x %d 像素\r\n", display.width(), display.height());
+  Serial.printf("顯示器型號: GDEQ0426T82 (4.26\" 黑白電子紙)\r\n");
+  Serial.printf("解析度: 480 x 800 像素 (理論值)\r\n");
+  Serial.printf("實際可用區域: %d x %d 像素\r\n", display.width(), display.height());
   Serial.println("驅動程式: GxEPD2_426_GDEQ0426T82 (專用)");
   Serial.println();
   
