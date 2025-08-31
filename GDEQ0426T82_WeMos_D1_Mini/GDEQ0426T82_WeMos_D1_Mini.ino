@@ -300,10 +300,79 @@ void testPartialUpdate() {
   Serial.println(updateHeight);
   
   // 設定部分更新視窗
-  display.setPartialWindow(updateX, updateY, updateWidth, updateHeight);
-  
+  // 估算部分更新需要的 buffer 大小 (位圖每列為 (width+7)/8 bytes)
+  unsigned long bytesPerRow = (unsigned long)( (updateWidth + 7) / 8 );
+  unsigned long bufferNeeded = bytesPerRow * (unsigned long)updateHeight;
+  unsigned long freeHeap = ESP.getFreeHeap();
+  Serial.print("部分更新緩衝需求 (bytes): "); Serial.println(bufferNeeded);
+  Serial.print("目前可用記憶體: "); Serial.println(freeHeap);
+
+  // 為安全起見，將更新區域的 x 起始位置對齊到 8 位元 (byte boundary)
+  // 許多 EPD/驅動在位元組邊界上處理更穩定，若起始座標不是 8 的倍數，先調整視窗
+  int alignedX = updateX & ~7; // 向下對齊
+  int extraLeft = updateX - alignedX;
+  int alignedWidth = updateWidth + extraLeft;
+  // 再向上擴展寬度以達到 8 的倍數
+  if (alignedWidth % 8) {
+    alignedWidth += (8 - (alignedWidth % 8));
+  }
+  if (alignedX != updateX || alignedWidth != updateWidth) {
+    Serial.print("[注意] 調整部分更新視窗以對齊 8-bit 邊界: ");
+    Serial.print("orig=("); Serial.print(updateX); Serial.print(","); Serial.print(updateY);
+    Serial.print(","); Serial.print(updateWidth); Serial.print("x"); Serial.print(updateHeight); Serial.print(") -> ");
+    Serial.print("aligned=("); Serial.print(alignedX); Serial.print(","); Serial.print(updateY);
+    Serial.print(","); Serial.print(alignedWidth); Serial.print("x"); Serial.print(updateHeight); Serial.println(")");
+  }
+
+  // 重新估算緩衝需求
+  unsigned long a_bytesPerRow = (unsigned long)((alignedWidth + 7) / 8);
+  unsigned long a_bufferNeeded = a_bytesPerRow * (unsigned long)updateHeight;
+  Serial.print("對齊後緩衝需求 (bytes): "); Serial.println(a_bufferNeeded);
+  // 使用更保守的保留空間
+  const unsigned long SAFETY_MARGIN = 3000UL;
+  if (a_bufferNeeded + SAFETY_MARGIN > freeHeap) { // 保留更多額外空間
+    Serial.println("[警告] 可用記憶體不足以安全執行部分更新，回退為全螢幕更新。");
+    // 直接填滿整個畫面並執行全螢幕更新
+    display.fillScreen(GxEPD_BLACK);
+    display.setTextColor(GxEPD_WHITE);
+    display.setCursor(10, 30);
+    display.println("PARTIAL->FULL FALLBACK");
+    display.setCursor(10, 60);
+    display.print("Needed: "); display.print(a_bufferNeeded); display.println(" bytes");
+    display.setCursor(10, 90);
+    display.print("Free: "); display.print(freeHeap); display.println(" bytes");
+    display.display(false); // 全螢幕更新
+    waitForDisplayReady();
+    Serial.println("已使用全螢幕更新作為回退策略");
+    return;
+  }
+
+  // 如果記憶體不足，回退為全螢幕更新以避免破壞畫面
+  if (bufferNeeded + 1500UL > freeHeap) { // 保留一些額外空間
+    Serial.println("[警告] 可用記憶體不足以安全執行部分更新，回退為全螢幕更新。");
+    // 直接填滿整個畫面並執行全螢幕更新
+    display.fillScreen(GxEPD_BLACK);
+    display.setTextColor(GxEPD_WHITE);
+    display.setCursor(10, 30);
+    display.println("PARTIAL->FULL FALLBACK");
+    display.setCursor(10, 60);
+    display.print("Needed: "); display.print(bufferNeeded); display.println(" bytes");
+    display.setCursor(10, 90);
+    display.print("Free: "); display.print(freeHeap); display.println(" bytes");
+    display.display(false); // 全螢幕更新
+    waitForDisplayReady();
+    Serial.println("已使用全螢幕更新作為回退策略");
+    return;
+  }
+
+  // 設定部分更新視窗 (使用對齊後的參數)
+  display.setPartialWindow(alignedX, updateY, alignedWidth, updateHeight);
+
   // 在部分更新區域繪製新內容（相對座標）
-  display.fillScreen(GxEPD_BLACK);  // 用黑色背景讓效果更明顯
+  // 避免使用 fillScreen (可能作用於整個緩衝區)，改用 fillRect 填滿部分視窗
+  // 注意：由於視窗已對齊，繪製時若有偏移，需考慮 extraLeft
+  int relX = extraLeft; // 在對齊視窗中，相對於 alignedX 的繪製偏移
+  display.fillRect(relX, 0, updateWidth, updateHeight, GxEPD_BLACK);  // 用黑色背景讓效果更明顯
   display.setTextColor(GxEPD_WHITE);
   display.setFont(&FreeMonoBold9pt7b);
   
@@ -328,8 +397,13 @@ void testPartialUpdate() {
   display.println(updateHeight);
   
   // 執行部分更新
+  // 在顯示前，記錄一些診斷資訊
+  Serial.print("執行部分更新前 FreeHeap: "); Serial.println(ESP.getFreeHeap());
+  Serial.print("BUSY (pre): "); Serial.println(digitalRead(EPD_BUSY) ? "HIGH" : "LOW");
   display.display(true);  // 部分更新
   waitForDisplayReady();   // 等待顯示完成
+  Serial.print("執行部分更新後 FreeHeap: "); Serial.println(ESP.getFreeHeap());
+  Serial.print("BUSY (post): "); Serial.println(digitalRead(EPD_BUSY) ? "HIGH" : "LOW");
   
   Serial.print("部分更新完成 (總螢幕: ");
   Serial.print(screenWidth);
@@ -390,10 +464,42 @@ void testPartialUpdateCenter() {
   Serial.println(updateHeight);
   
   // 設定中央部分更新區域
-  display.setPartialWindow(centerX, centerY, updateWidth, updateHeight);
-  
+  // 估算部分更新需要的 buffer 大小
+  unsigned long c_bytesPerRow = (unsigned long)( (updateWidth + 7) / 8 );
+  unsigned long c_bufferNeeded = c_bytesPerRow * (unsigned long)updateHeight;
+  unsigned long c_freeHeap = ESP.getFreeHeap();
+  Serial.print("中央更新緩衝需求 (bytes): "); Serial.println(c_bufferNeeded);
+  Serial.print("目前可用記憶體: "); Serial.println(c_freeHeap);
+  // 對中央區域也做 8-bit 對齊處理
+  int c_alignedX = centerX & ~7;
+  int c_extraLeft = centerX - c_alignedX;
+  int c_alignedWidth = updateWidth + c_extraLeft;
+  if (c_alignedWidth % 8) {
+    c_alignedWidth += (8 - (c_alignedWidth % 8));
+  }
+  unsigned long c_a_bytesPerRow = (unsigned long)((c_alignedWidth + 7) / 8);
+  unsigned long c_a_bufferNeeded = c_a_bytesPerRow * (unsigned long)updateHeight;
+  Serial.print("對齊後中央緩衝需求 (bytes): "); Serial.println(c_a_bufferNeeded);
+  const unsigned long C_SAFETY_MARGIN = 3000UL;
+  if (c_a_bufferNeeded + C_SAFETY_MARGIN > c_freeHeap) {
+    Serial.println("[警告] 可用記憶體不足以安全執行中央部分更新，回退為全螢幕更新。");
+    // 直接用全螢幕更新作為回退
+    display.fillScreen(GxEPD_BLACK);
+    display.setTextColor(GxEPD_WHITE);
+    display.setCursor(20, 40);
+    display.println("CENTER PARTIAL->FULL FALLBACK");
+    display.display(false);
+    waitForDisplayReady();
+    Serial.println("已使用全螢幕更新作為回退策略 (中央更新)");
+    return;
+  }
+
+  display.setPartialWindow(c_alignedX, centerY, c_alignedWidth, updateHeight);
+
   // 用對比色填充，讓效果更明顯
-  display.fillScreen(GxEPD_BLACK);  // 黑色背景
+  // 改為在部分視窗填充矩形，避免影響整個畫面緩衝
+  int c_relX = c_extraLeft;
+  display.fillRect(c_relX, 0, updateWidth, updateHeight, GxEPD_BLACK);  // 黑色背景
   display.setTextColor(GxEPD_WHITE);
   display.setFont(&FreeMonoBold9pt7b);
   
@@ -427,6 +533,8 @@ void testPartialUpdateCenter() {
   
   display.display(true);  // 部分更新
   waitForDisplayReady();   // 等待顯示完成
+  Serial.print("執行中央部分更新後 FreeHeap: "); Serial.println(ESP.getFreeHeap());
+  Serial.print("BUSY (post-center): "); Serial.println(digitalRead(EPD_BUSY) ? "HIGH" : "LOW");
   Serial.println("[OK] 中央部分更新測試完成");
   Serial.flush();
 }
