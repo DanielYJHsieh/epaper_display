@@ -15,6 +15,7 @@
 #include <GxEPD2_BW.h>
 #include <gdeq/GxEPD2_426_GDEQ0426T82.h>
 #include <Fonts/FreeMonoBold9pt7b.h>
+#include <ESP8266WiFi.h>
 
 // ==================== 腳位定義 ====================
 #define EPD_CS    15  // D8 - CS (必須加 3.3k 下拉電阻到 GND)
@@ -23,8 +24,10 @@
 #define EPD_BUSY   4  // D2 - BUSY
 
 // ==================== 顯示器物件 ====================
+// 記憶體最佳化: 限制顯示高度從 800→400 像素以減少緩衝需求
+#define LIMITED_HEIGHT 400
 // 強制使用 GxEPD2_426_GDEQ0426T82 驅動程式
-GxEPD2_BW<GxEPD2_426_GDEQ0426T82, GxEPD2_426_GDEQ0426T82::HEIGHT> display(GxEPD2_426_GDEQ0426T82(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY));
+GxEPD2_BW<GxEPD2_426_GDEQ0426T82, LIMITED_HEIGHT> display(GxEPD2_426_GDEQ0426T82(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY));
 
 void setup() {
   Serial.begin(115200);
@@ -33,6 +36,12 @@ void setup() {
   Serial.println("=== GDEQ0426T82 + WeMos D1 Mini 強制 GxEPD2 測試 ===");
   Serial.printf("編譯時間: %s %s\r\n", __DATE__, __TIME__);
   Serial.println();
+  
+  // ==================== 記憶體最佳化：禁用 WiFi ====================
+  // 禁用 WiFi 以釋放約 25KB 記憶體用於電子紙顯示
+  WiFi.mode(WIFI_OFF);
+  WiFi.forceSleepBegin();
+  Serial.println("WiFi 已禁用以最佳化記憶體使用");
   
   // 顯示系統資訊
   Serial.println("--- ESP8266 系統資訊 ---");
@@ -101,7 +110,7 @@ void setup() {
   Serial.println("[OK] GxEPD2 顯示器初始化成功！");
   Serial.printf("顯示器尺寸: %d x %d 像素\r\n", display.width(), display.height());
   Serial.printf("顯示器型號: GDEQ0426T82 (4.26\" 黑白電子紙)\r\n");
-  Serial.printf("解析度: 480 x 800 像素 (理論值)\r\n");
+  Serial.printf("解析度: 800 x 480 像素 (理論值)\r\n");
   Serial.printf("實際可用區域: %d x %d 像素\r\n", display.width(), display.height());
   Serial.println("驅動程式: GxEPD2_426_GDEQ0426T82 (專用)");
   Serial.println();
@@ -217,7 +226,6 @@ void testDrawShapes() {
   Serial.println("測試 3: 繪製圖形");
   Serial.flush();
   
-  // ESP8266 不支援 try-catch，直接執行
   display.setRotation(0);
   display.fillScreen(GxEPD_WHITE);
   
@@ -230,21 +238,23 @@ void testDrawShapes() {
   Serial.print(" x ");
   Serial.println(screenHeight);
   
-  // 根據實際螢幕尺寸調整圖形座標
-  // 繪製矩形 - 左上角區域
-  display.drawRect(10, 50, screenWidth/3, screenHeight/6, GxEPD_BLACK);
-  display.fillRect(screenWidth/2, 50, screenWidth/4, screenHeight/6, GxEPD_BLACK);
+  // 繪製簡單圖形
+  display.drawRect(10, 10, screenWidth-20, screenHeight-20, GxEPD_BLACK);
+  display.drawRect(20, 20, screenWidth-40, screenHeight-40, GxEPD_BLACK);
   
-  // 繪製圓形 - 中央區域
-  display.drawCircle(screenWidth/4, screenHeight/2, screenWidth/8, GxEPD_BLACK);
-  display.fillCircle(3*screenWidth/4, screenHeight/2, screenWidth/12, GxEPD_BLACK);
+  // 中央十字線
+  display.drawLine(screenWidth/2, 10, screenWidth/2, screenHeight-10, GxEPD_BLACK);
+  display.drawLine(10, screenHeight/2, screenWidth-10, screenHeight/2, GxEPD_BLACK);
   
-  // 繪製線條 - 對角線
-  display.drawLine(0, 0, screenWidth-1, screenHeight-1, GxEPD_BLACK);
-  display.drawLine(0, screenHeight-1, screenWidth-1, 0, GxEPD_BLACK);
+  // 四角標記
+  display.fillRect(10, 10, 50, 50, GxEPD_BLACK);
+  display.fillRect(screenWidth-60, 10, 50, 50, GxEPD_BLACK);
+  display.fillRect(10, screenHeight-60, 50, 50, GxEPD_BLACK);
+  display.fillRect(screenWidth-60, screenHeight-60, 50, 50, GxEPD_BLACK);
   
-  // 繪製邊框
-  display.drawRect(0, 0, screenWidth-1, screenHeight-1, GxEPD_BLACK);
+  display.setTextColor(GxEPD_BLACK);
+  display.setCursor(screenWidth/2 - 50, screenHeight/2);
+  display.println("SHAPES TEST");
   
   display.display(false);
   waitForDisplayReady();   // 等待顯示完成
@@ -284,11 +294,11 @@ void testPartialUpdate() {
   int screenWidth = display.width();
   int screenHeight = display.height();
   
-  // 設定部分更新區域 - 下半部區域（較大的區域更容易看到效果）
-  int updateX = 20;
-  int updateY = screenHeight / 2;  // 從中間開始
-  int updateWidth = screenWidth - 40;  // 留更多邊界
-  int updateHeight = screenHeight / 2 - 20;  // 下半部
+  // 設定部分更新區域 - 使用較小的區域以節省記憶體
+  int updateX = 50;
+  int updateY = 50;  
+  int updateWidth = 200;   // 固定 200 像素寬度
+  int updateHeight = 100;  // 固定 100 像素高度
   
   Serial.print("部分更新區域: ");
   Serial.print(updateX);
@@ -299,117 +309,44 @@ void testPartialUpdate() {
   Serial.print("x");
   Serial.println(updateHeight);
   
-  // 設定部分更新視窗
-  // 估算部分更新需要的 buffer 大小 (位圖每列為 (width+7)/8 bytes)
+  // 估算部分更新需要的 buffer 大小
   unsigned long bytesPerRow = (unsigned long)( (updateWidth + 7) / 8 );
   unsigned long bufferNeeded = bytesPerRow * (unsigned long)updateHeight;
   unsigned long freeHeap = ESP.getFreeHeap();
   Serial.print("部分更新緩衝需求 (bytes): "); Serial.println(bufferNeeded);
   Serial.print("目前可用記憶體: "); Serial.println(freeHeap);
 
-  // 為安全起見，將更新區域的 x 起始位置對齊到 8 位元 (byte boundary)
-  // 許多 EPD/驅動在位元組邊界上處理更穩定，若起始座標不是 8 的倍數，先調整視窗
-  int alignedX = updateX & ~7; // 向下對齊
-  int extraLeft = updateX - alignedX;
-  int alignedWidth = updateWidth + extraLeft;
-  // 再向上擴展寬度以達到 8 的倍數
-  if (alignedWidth % 8) {
-    alignedWidth += (8 - (alignedWidth % 8));
-  }
-  if (alignedX != updateX || alignedWidth != updateWidth) {
-    Serial.print("[注意] 調整部分更新視窗以對齊 8-bit 邊界: ");
-    Serial.print("orig=("); Serial.print(updateX); Serial.print(","); Serial.print(updateY);
-    Serial.print(","); Serial.print(updateWidth); Serial.print("x"); Serial.print(updateHeight); Serial.print(") -> ");
-    Serial.print("aligned=("); Serial.print(alignedX); Serial.print(","); Serial.print(updateY);
-    Serial.print(","); Serial.print(alignedWidth); Serial.print("x"); Serial.print(updateHeight); Serial.println(")");
-  }
-
-  // 重新估算緩衝需求
-  unsigned long a_bytesPerRow = (unsigned long)((alignedWidth + 7) / 8);
-  unsigned long a_bufferNeeded = a_bytesPerRow * (unsigned long)updateHeight;
-  Serial.print("對齊後緩衝需求 (bytes): "); Serial.println(a_bufferNeeded);
-  // 使用更保守的保留空間
-  const unsigned long SAFETY_MARGIN = 3000UL;
-  if (a_bufferNeeded + SAFETY_MARGIN > freeHeap) { // 保留更多額外空間
+  // 檢查記憶體是否足夠
+  if (bufferNeeded + 3000UL > freeHeap) {
     Serial.println("[警告] 可用記憶體不足以安全執行部分更新，回退為全螢幕更新。");
-    // 直接填滿整個畫面並執行全螢幕更新
     display.fillScreen(GxEPD_BLACK);
     display.setTextColor(GxEPD_WHITE);
     display.setCursor(10, 30);
     display.println("PARTIAL->FULL FALLBACK");
-    display.setCursor(10, 60);
-    display.print("Needed: "); display.print(a_bufferNeeded); display.println(" bytes");
-    display.setCursor(10, 90);
-    display.print("Free: "); display.print(freeHeap); display.println(" bytes");
-    display.display(false); // 全螢幕更新
+    display.display(false);
     waitForDisplayReady();
-    Serial.println("已使用全螢幕更新作為回退策略");
     return;
   }
 
-  // 如果記憶體不足，回退為全螢幕更新以避免破壞畫面
-  if (bufferNeeded + 1500UL > freeHeap) { // 保留一些額外空間
-    Serial.println("[警告] 可用記憶體不足以安全執行部分更新，回退為全螢幕更新。");
-    // 直接填滿整個畫面並執行全螢幕更新
-    display.fillScreen(GxEPD_BLACK);
-    display.setTextColor(GxEPD_WHITE);
-    display.setCursor(10, 30);
-    display.println("PARTIAL->FULL FALLBACK");
-    display.setCursor(10, 60);
-    display.print("Needed: "); display.print(bufferNeeded); display.println(" bytes");
-    display.setCursor(10, 90);
-    display.print("Free: "); display.print(freeHeap); display.println(" bytes");
-    display.display(false); // 全螢幕更新
-    waitForDisplayReady();
-    Serial.println("已使用全螢幕更新作為回退策略");
-    return;
-  }
+  // 設定部分更新視窗
+  display.setPartialWindow(updateX, updateY, updateWidth, updateHeight);
 
-  // 設定部分更新視窗 (使用對齊後的參數)
-  display.setPartialWindow(alignedX, updateY, alignedWidth, updateHeight);
-
-  // 在部分更新區域繪製新內容（相對座標）
-  // 避免使用 fillScreen (可能作用於整個緩衝區)，改用 fillRect 填滿部分視窗
-  // 注意：由於視窗已對齊，繪製時若有偏移，需考慮 extraLeft
-  int relX = extraLeft; // 在對齊視窗中，相對於 alignedX 的繪製偏移
-  display.fillRect(relX, 0, updateWidth, updateHeight, GxEPD_BLACK);  // 用黑色背景讓效果更明顯
+  // 在部分更新區域繪製內容
+  display.fillScreen(GxEPD_WHITE);
+  display.fillRect(2, 2, updateWidth-4, updateHeight-4, GxEPD_BLACK);
   display.setTextColor(GxEPD_WHITE);
   display.setFont(&FreeMonoBold9pt7b);
-  
-  // 繪製白色邊框
-  display.drawRect(2, 2, updateWidth-4, updateHeight-4, GxEPD_WHITE);
-  
-  // 顯示時間戳記 (使用相對座標)
   display.setCursor(10, 30);
-  display.println("PARTIAL UPDATE");
+  display.println("PARTIAL");
   display.setCursor(10, 60);
-  display.print("Time: ");
-  display.print(millis() / 1000);
-  display.println("s");
-  display.setCursor(10, 90);
-  display.print("RAM: ");
-  display.print(ESP.getFreeHeap());
-  display.println("B");
-  display.setCursor(10, 120);
-  display.print("Size: ");
-  display.print(updateWidth);
-  display.print("x");
-  display.println(updateHeight);
+  display.print("OK");
   
   // 執行部分更新
-  // 在顯示前，記錄一些診斷資訊
   Serial.print("執行部分更新前 FreeHeap: "); Serial.println(ESP.getFreeHeap());
-  Serial.print("BUSY (pre): "); Serial.println(digitalRead(EPD_BUSY) ? "HIGH" : "LOW");
   display.display(true);  // 部分更新
   waitForDisplayReady();   // 等待顯示完成
   Serial.print("執行部分更新後 FreeHeap: "); Serial.println(ESP.getFreeHeap());
-  Serial.print("BUSY (post): "); Serial.println(digitalRead(EPD_BUSY) ? "HIGH" : "LOW");
   
-  Serial.print("部分更新完成 (總螢幕: ");
-  Serial.print(screenWidth);
-  Serial.print(" x ");
-  Serial.print(screenHeight);
-  Serial.println(")");
   Serial.println("[OK] 部分更新測試完成");
   Serial.flush();
 }
@@ -448,11 +385,11 @@ void testPartialUpdateCenter() {
   // 步驟 3: 執行中央部分更新
   Serial.println("步驟 2: 執行中央部分更新");
   
-  // 計算螢幕中央區域（更大的區域）
-  int centerX = display.width() / 6;   // 更靠左一點
-  int centerY = display.height() / 6;  // 更靠上一點
-  int updateWidth = display.width() * 2 / 3;   // 2/3 寬度
-  int updateHeight = display.height() * 2 / 3; // 2/3 高度
+  // 計算螢幕中央區域（記憶體最佳化：使用較小區域）
+  int centerX = display.width() / 3;   
+  int centerY = display.height() / 3;  
+  int updateWidth = 150;   // 固定較小寬度
+  int updateHeight = 80;   // 固定較小高度
   
   Serial.print("螢幕中央更新區域: ");
   Serial.print(centerX);
@@ -496,40 +433,35 @@ void testPartialUpdateCenter() {
 
   display.setPartialWindow(c_alignedX, centerY, c_alignedWidth, updateHeight);
 
-  // 用對比色填充，讓效果更明顯
-  // 改為在部分視窗填充矩形，避免影響整個畫面緩衝
-  int c_relX = c_extraLeft;
-  display.fillRect(c_relX, 0, updateWidth, updateHeight, GxEPD_BLACK);  // 黑色背景
+  // 🔧 修正中央更新緩衝區繪製：清除並重新繪製
+  // 在部分更新視窗中，座標是相對於視窗原點 (0,0)
+  display.fillScreen(GxEPD_WHITE);  // 清除視窗區域
+  
+  // 繪製黑色背景區域（相對於視窗座標）
+  display.fillRect(2, 2, c_alignedWidth-4, updateHeight-4, GxEPD_BLACK);
+  
+  // 設定文字顏色和字型
   display.setTextColor(GxEPD_WHITE);
   display.setFont(&FreeMonoBold9pt7b);
   
   // 繪製白色邊框 (使用相對座標)
-  display.drawRect(5, 5, updateWidth-10, updateHeight-10, GxEPD_WHITE);
-  display.drawRect(10, 10, updateWidth-20, updateHeight-20, GxEPD_WHITE);
+  display.drawRect(4, 4, c_alignedWidth-8, updateHeight-8, GxEPD_WHITE);
   
   // 在中央顯示資訊 (使用相對座標)
-  display.setCursor(20, 40);
-  display.println("CENTER UPDATE");
-  display.setCursor(20, 70);
-  display.println("SUCCESS!");
-  display.setCursor(20, 100);
-  display.print("Region: ");
-  display.print(updateWidth);
-  display.print("x");
-  display.println(updateHeight);
-  display.setCursor(20, 130);
-  display.print("Time: ");
+  display.setCursor(8, 25);
+  display.println("CENTER");
+  display.setCursor(8, 45);
+  display.println("UPDATE");
+  display.setCursor(8, 65);
+  display.print("T:");
   display.print(millis() / 1000);
   display.println("s");
-  display.setCursor(20, 160);
-  display.print("Free RAM: ");
-  display.println(ESP.getFreeHeap());
   
   // 在角落加上小方塊確認位置
-  display.fillRect(0, 0, 15, 15, GxEPD_WHITE);
-  display.fillRect(updateWidth-15, 0, 15, 15, GxEPD_WHITE);
-  display.fillRect(0, updateHeight-15, 15, 15, GxEPD_WHITE);
-  display.fillRect(updateWidth-15, updateHeight-15, 15, 15, GxEPD_WHITE);
+  display.fillRect(0, 0, 8, 8, GxEPD_WHITE);
+  display.fillRect(c_alignedWidth-8, 0, 8, 8, GxEPD_WHITE);
+  display.fillRect(0, updateHeight-8, 8, 8, GxEPD_WHITE);
+  display.fillRect(c_alignedWidth-8, updateHeight-8, 8, 8, GxEPD_WHITE);
   
   display.display(true);  // 部分更新
   waitForDisplayReady();   // 等待顯示完成
