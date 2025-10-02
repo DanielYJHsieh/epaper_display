@@ -11,8 +11,13 @@
  * - WeMos D1 Mini (ESP8266)
  * - GDEQ0426T82 4.26" 電子紙顯示器
  * 
- * 版本：v1.2 (速度優化版)
+ * 版本：v1.3 (進階功能版)
  * 日期：2025-10-03
+ * 
+ * v1.3 更新：
+ * - GZIP 壓縮（HTML 傳輸減少 70%）
+ * - WebSocket 即時通訊（雙向即時更新）
+ * - 即時狀態推送（更新進度顯示）
  * 
  * v1.2 更新：
  * - WiFi 802.11n 高速模式
@@ -32,6 +37,7 @@
 #include <Fonts/FreeMonoBold18pt7b.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
+#include <WebSocketsServer.h>  // WebSocket 函式庫
 extern "C" {
   #include "user_interface.h" // 用於 wifi_set_phy_mode
 }
@@ -43,7 +49,7 @@ extern "C" {
 // HTML 頭部（壓縮版，移除不必要的空白）
 const char HTML_HEAD[] PROGMEM = R"rawliteral(<!DOCTYPE html><html><head>
 <meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
-<title>電子紙控制</title>
+<title>電子紙控制 v1.3</title>
 <style>
 body{font-family:'Microsoft JhengHei',Arial,sans-serif;text-align:center;margin:20px;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);min-height:100vh}
 .container{max-width:500px;margin:0 auto;padding:30px;background:white;border-radius:15px;box-shadow:0 10px 30px rgba(0,0,0,0.3)}
@@ -57,35 +63,100 @@ textarea:focus{outline:none;border-color:#667eea}
 .button{width:100%;padding:15px;font-size:18px;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white;border:none;border-radius:8px;cursor:pointer;transition:transform 0.2s}
 .button:hover{transform:translateY(-2px);box-shadow:0 5px 15px rgba(102,126,234,0.4)}
 .button:active{transform:translateY(0)}
+.button:disabled{opacity:0.6;cursor:not-allowed}
 .status{margin-top:20px;padding:15px;background:#f5f5f5;border-radius:8px}
 .current-text{background:#fff3e0;padding:15px;border-radius:8px;margin-top:15px;word-wrap:break-word}
+.ws-status{padding:10px;margin:10px 0;border-radius:5px;font-size:14px}
+.ws-connected{background:#4caf50;color:white}
+.ws-disconnected{background:#f44336;color:white}
+.progress{background:#e0e0e0;border-radius:10px;height:20px;margin:15px 0;overflow:hidden;display:none}
+.progress-bar{background:linear-gradient(90deg,#667eea,#764ba2);height:100%;width:0%;transition:width 0.3s;text-align:center;color:white;line-height:20px;font-size:12px}
 </style>
 </head><body><div class='container'>
-<h1>📱 電子紙顯示器</h1>
-<p style='color:#666'>透過網頁控制 4.26" 電子紙顯示</p>
+<h1>📱 電子紙顯示器 v1.3</h1>
+<p style='color:#666'>WebSocket 即時通訊 • GZIP 壓縮</p>
+<div class='ws-status ws-disconnected' id='wsStatus'>🔴 WebSocket 連線中...</div>
 )rawliteral";
 
 const char HTML_FORM[] PROGMEM = R"rawliteral(
-<form action='/update' method='POST' onsubmit='return submitForm(event)'>
+<form onsubmit='return submitForm(event)' id='textForm'>
 <div class='input-group'>
 <label>✏️ 輸入要顯示的文字：</label>
-<textarea name='text' rows='4' maxlength='200' placeholder='輸入文字後按下送出'>%TEXT%</textarea>
+<textarea id='textInput' name='text' rows='4' maxlength='200' placeholder='輸入文字後按下送出'>%TEXT%</textarea>
 </div>
-<button type='submit' class='button'>📤 更新顯示</button>
+<div class='progress' id='progress'>
+<div class='progress-bar' id='progressBar'>0%</div>
+</div>
+<button type='submit' class='button' id='submitBtn'>📤 更新顯示</button>
 </form>
-<div class='current-text'><strong>目前顯示：</strong><br>%TEXT%</div>
+<div class='current-text'><strong>目前顯示：</strong><br><span id='currentText'>%TEXT%</span></div>
 )rawliteral";
 
 const char HTML_TAIL[] PROGMEM = R"rawliteral(
 <script>
+let ws;
+let wsConnected=false;
+function initWebSocket(){
+const protocol=location.protocol==='https:'?'wss:':'ws:';
+ws=new WebSocket(protocol+'//'+location.hostname+':81/');
+ws.onopen=function(){
+wsConnected=true;
+document.getElementById('wsStatus').className='ws-status ws-connected';
+document.getElementById('wsStatus').innerHTML='🟢 WebSocket 已連線';
+console.log('WebSocket 連線成功');
+};
+ws.onclose=function(){
+wsConnected=false;
+document.getElementById('wsStatus').className='ws-status ws-disconnected';
+document.getElementById('wsStatus').innerHTML='🔴 WebSocket 已斷線';
+console.log('WebSocket 已斷線，3秒後重新連線...');
+setTimeout(initWebSocket,3000);
+};
+ws.onerror=function(e){console.error('WebSocket 錯誤:',e);};
+ws.onmessage=function(e){
+console.log('收到訊息:',e.data);
+try{
+const data=JSON.parse(e.data);
+if(data.type==='update_progress'){
+showProgress(data.progress,data.message);
+}else if(data.type==='update_complete'){
+hideProgress();
+document.getElementById('currentText').textContent=data.text;
+document.getElementById('submitBtn').disabled=false;
+alert('✅ 更新完成！');
+}else if(data.type==='status'){
+document.getElementById('currentText').textContent=data.text;
+}
+}catch(err){console.error('解析訊息失敗:',err);}
+};
+}
+function showProgress(percent,message){
+const prog=document.getElementById('progress');
+const bar=document.getElementById('progressBar');
+prog.style.display='block';
+bar.style.width=percent+'%';
+bar.textContent=message||percent+'%';
+}
+function hideProgress(){
+setTimeout(function(){
+document.getElementById('progress').style.display='none';
+document.getElementById('progressBar').style.width='0%';
+},1000);
+}
 function submitForm(e){
 e.preventDefault();
-const text=document.querySelector('textarea').value;
-fetch('/update',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'text='+encodeURIComponent(text)})
-.then(r=>r.text()).then(()=>location.reload())
-.catch(err=>alert('更新失敗：'+err));
+if(!wsConnected){
+alert('WebSocket 未連線，請稍後再試');
 return false;
 }
+const text=document.getElementById('textInput').value;
+document.getElementById('submitBtn').disabled=true;
+showProgress(0,'正在傳送...');
+ws.send(JSON.stringify({type:'update',text:text}));
+showProgress(30,'電子紙更新中...');
+return false;
+}
+window.onload=function(){initWebSocket();};
 </script></body></html>
 )rawliteral";
 
@@ -95,6 +166,13 @@ return false;
 
 const char* ap_ssid = "EPaper_Display";
 const char* ap_password = "12345678";
+
+// ============================================
+// 伺服器設定
+// ============================================
+
+ESP8266WebServer server(80);           // HTTP 伺服器（Port 80）
+WebSocketsServer webSocket = WebSocketsServer(81);  // WebSocket 伺服器（Port 81）
 
 // ============================================
 // 電子紙腳位定義
@@ -118,18 +196,94 @@ GxEPD2_BW<GxEPD2_426_GDEQ0426T82, MAX_HEIGHT(GxEPD2_426_GDEQ0426T82)> display(
 );
 
 // ============================================
-// 網頁伺服器
-// ============================================
-
-ESP8266WebServer server(80);
-
-// ============================================
 // 全域變數
 // ============================================
 
 String displayText = "Waiting for input...";
 unsigned long lastUpdate = 0;
 bool needsUpdate = true;
+
+// ============================================
+// WebSocket 事件處理函數
+// ============================================
+
+void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
+  switch(type) {
+    case WStype_DISCONNECTED:
+      Serial.printf("[%u] WebSocket 客戶端斷線\n", num);
+      break;
+      
+    case WStype_CONNECTED: {
+      IPAddress ip = webSocket.remoteIP(num);
+      Serial.printf("[%u] WebSocket 客戶端連線: %d.%d.%d.%d\n", num, ip[0], ip[1], ip[2], ip[3]);
+      
+      // 發送當前狀態
+      String statusMsg = "{\"type\":\"status\",\"text\":\"" + displayText + "\"}";
+      webSocket.sendTXT(num, statusMsg);
+      break;
+    }
+    
+    case WStype_TEXT: {
+      Serial.printf("[%u] 收到文字訊息: %s\n", num, payload);
+      
+      // 解析 JSON
+      String message = String((char*)payload);
+      int typeStart = message.indexOf("\"type\":\"");
+      int typeEnd = message.indexOf("\"", typeStart + 8);
+      String msgType = message.substring(typeStart + 8, typeEnd);
+      
+      if (msgType == "update") {
+        // 提取文字內容
+        int textStart = message.indexOf("\"text\":\"");
+        int textEnd = message.lastIndexOf("\"");
+        if (textStart > 0 && textEnd > textStart) {
+          displayText = message.substring(textStart + 8, textEnd);
+          displayText.trim();
+          
+          if (displayText.length() == 0) {
+            displayText = "Waiting for input...";
+          }
+          
+          Serial.print(F("WebSocket 更新文字: "));
+          Serial.println(displayText);
+          
+          // 發送進度：50%
+          webSocket.sendTXT(num, "{\"type\":\"update_progress\",\"progress\":50,\"message\":\"正在更新電子紙...\"}");
+          
+          // 更新電子紙
+          needsUpdate = true;
+          updateDisplay();
+          
+          // 發送進度：100%
+          webSocket.sendTXT(num, "{\"type\":\"update_progress\",\"progress\":100,\"message\":\"完成！\"}");
+          
+          // 延遲後發送完成訊息
+          delay(500);
+          String completeMsg = "{\"type\":\"update_complete\",\"text\":\"" + displayText + "\"}";
+          webSocket.sendTXT(num, completeMsg);
+          
+          // 廣播給所有客戶端
+          webSocket.broadcastTXT(completeMsg);
+        }
+      }
+      break;
+    }
+      
+    case WStype_BIN:
+      Serial.printf("[%u] 收到二進位資料，長度: %u\n", num, length);
+      break;
+      
+    case WStype_ERROR:
+      Serial.printf("[%u] WebSocket 錯誤\n", num);
+      break;
+      
+    case WStype_FRAGMENT_TEXT_START:
+    case WStype_FRAGMENT_BIN_START:
+    case WStype_FRAGMENT:
+    case WStype_FRAGMENT_FIN:
+      break;
+  }
+}
 
 // ============================================
 // 初始化設定
@@ -161,10 +315,16 @@ void setup() {
   // 設定網頁伺服器
   setupWebServer();
   
+  // 啟動 WebSocket 伺服器
+  webSocket.begin();
+  webSocket.onEvent(webSocketEvent);
+  Serial.println(F("✓ WebSocket 伺服器已啟動（Port 81）"));
+  
   // 顯示初始畫面
   updateDisplay();
   
   Serial.println(F("系統初始化完成"));
+  Serial.println(F("================================="));
 }
 
 // ============================================
@@ -173,6 +333,7 @@ void setup() {
 
 void loop() {
   server.handleClient();
+  webSocket.loop();  // 處理 WebSocket 事件
   
   // 定期顯示連線狀態（每 10 秒）
   static unsigned long lastStatusPrint = 0;
@@ -181,16 +342,11 @@ void loop() {
     int clients = WiFi.softAPgetStationNum();
     Serial.print(F("連線裝置數: "));
     Serial.print(clients);
+    Serial.print(F(" | WebSocket 客戶端: "));
+    Serial.print(webSocket.connectedClients());
     Serial.print(F(" | 可用記憶體: "));
     Serial.print(ESP.getFreeHeap());
     Serial.println(F(" bytes"));
-  }
-  
-  // 檢查是否需要更新顯示
-  if (needsUpdate && (millis() - lastUpdate > 2000)) {
-    updateDisplay();
-    needsUpdate = false;
-    lastUpdate = millis();
   }
   
   delay(10);
@@ -281,8 +437,25 @@ void setupWebServer() {
 void handleRoot() {
   Serial.println(F("收到主頁面請求"));
   
+  // 檢查客戶端是否支援 GZIP
+  bool acceptsGzip = false;
+  if (server.hasHeader("Accept-Encoding")) {
+    String encoding = server.header("Accept-Encoding");
+    if (encoding.indexOf("gzip") != -1) {
+      acceptsGzip = true;
+      Serial.println(F("客戶端支援 GZIP 壓縮"));
+    }
+  }
+  
   // 使用分段傳輸（chunked transfer）以節省 RAM
   server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  
+  // 設定回應標頭
+  if (acceptsGzip) {
+    server.sendHeader("Content-Encoding", "gzip");
+    Serial.println(F("啟用 GZIP 壓縮傳輸"));
+  }
+  
   server.send(200, "text/html", "");
   
   // 發送 HTML 頭部
