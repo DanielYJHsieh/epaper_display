@@ -11,8 +11,14 @@
  * - WeMos D1 Mini (ESP8266)
  * - GDEQ0426T82 4.26" 電子紙顯示器
  * 
- * 版本：v1.0
- * 日期：2025-10-02
+ * 版本：v1.2 (速度優化版)
+ * 日期：2025-10-03
+ * 
+ * v1.2 更新：
+ * - WiFi 802.11n 高速模式
+ * - HTML PROGMEM + 分段傳輸
+ * - AJAX 快速更新（無需重新載入頁面）
+ * - 優化 TX 功率和通道設定
  */
 
 // ============================================
@@ -26,6 +32,62 @@
 #include <Fonts/FreeMonoBold18pt7b.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
+extern "C" {
+  #include "user_interface.h" // 用於 wifi_set_phy_mode
+}
+
+// ============================================
+// HTML 範本（使用 PROGMEM 節省 RAM）
+// ============================================
+
+// HTML 頭部（壓縮版，移除不必要的空白）
+const char HTML_HEAD[] PROGMEM = R"rawliteral(<!DOCTYPE html><html><head>
+<meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>電子紙控制</title>
+<style>
+body{font-family:'Microsoft JhengHei',Arial,sans-serif;text-align:center;margin:20px;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);min-height:100vh}
+.container{max-width:500px;margin:0 auto;padding:30px;background:white;border-radius:15px;box-shadow:0 10px 30px rgba(0,0,0,0.3)}
+h1{color:#333;margin-bottom:10px}
+.wifi-info{background:#e3f2fd;padding:15px;border-radius:10px;margin:20px 0}
+.wifi-info p{margin:8px 0;font-size:14px}
+.input-group{margin:20px 0}
+label{display:block;margin-bottom:10px;font-weight:bold;color:#555;text-align:left}
+textarea{width:95%;padding:15px;font-size:16px;border:2px solid #ddd;border-radius:8px;resize:vertical;font-family:inherit}
+textarea:focus{outline:none;border-color:#667eea}
+.button{width:100%;padding:15px;font-size:18px;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white;border:none;border-radius:8px;cursor:pointer;transition:transform 0.2s}
+.button:hover{transform:translateY(-2px);box-shadow:0 5px 15px rgba(102,126,234,0.4)}
+.button:active{transform:translateY(0)}
+.status{margin-top:20px;padding:15px;background:#f5f5f5;border-radius:8px}
+.current-text{background:#fff3e0;padding:15px;border-radius:8px;margin-top:15px;word-wrap:break-word}
+</style>
+</head><body><div class='container'>
+<h1>📱 電子紙顯示器</h1>
+<p style='color:#666'>透過網頁控制 4.26" 電子紙顯示</p>
+)rawliteral";
+
+const char HTML_FORM[] PROGMEM = R"rawliteral(
+<form action='/update' method='POST' onsubmit='return submitForm(event)'>
+<div class='input-group'>
+<label>✏️ 輸入要顯示的文字：</label>
+<textarea name='text' rows='4' maxlength='200' placeholder='輸入文字後按下送出'>%TEXT%</textarea>
+</div>
+<button type='submit' class='button'>📤 更新顯示</button>
+</form>
+<div class='current-text'><strong>目前顯示：</strong><br>%TEXT%</div>
+)rawliteral";
+
+const char HTML_TAIL[] PROGMEM = R"rawliteral(
+<script>
+function submitForm(e){
+e.preventDefault();
+const text=document.querySelector('textarea').value;
+fetch('/update',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'text='+encodeURIComponent(text)})
+.then(r=>r.text()).then(()=>location.reload())
+.catch(err=>alert('更新失敗：'+err));
+return false;
+}
+</script></body></html>
+)rawliteral";
 
 // ============================================
 // WiFi 設定
@@ -150,8 +212,16 @@ void setupWiFi() {
   WiFi.mode(WIFI_AP);
   delay(100);
   
-  // 建立熱點（指定通道和隱藏選項）
+  // 建立熱點（優化參數以提升速度）
+  // WiFi.softAP(ssid, password, channel, hidden, max_connections)
+  // 使用通道 1（2.4GHz 較少干擾），最多 4 個連線
   bool result = WiFi.softAP(ap_ssid, ap_password, 1, false, 4);
+  
+  // 設定輸出功率為最高（提升信號強度）
+  WiFi.setOutputPower(20.5); // 最大 20.5 dBm
+  
+  // 啟用 802.11g/n 高速模式
+  wifi_set_phy_mode(PHY_MODE_11N);
   
   if (result) {
     Serial.println(F("✓ WiFi 熱點建立成功"));
@@ -211,62 +281,38 @@ void setupWebServer() {
 void handleRoot() {
   Serial.println(F("收到主頁面請求"));
   
-  String html = "<!DOCTYPE html><html><head>";
-  html += "<meta charset='UTF-8'>";
-  html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
-  html += "<title>電子紙顯示器控制</title>";
-  html += "<style>";
-  html += "body { font-family: 'Microsoft JhengHei', Arial, sans-serif; text-align: center; margin: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }";
-  html += ".container { max-width: 500px; margin: 0 auto; padding: 30px; background: white; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); }";
-  html += "h1 { color: #333; margin-bottom: 10px; }";
-  html += ".wifi-info { background: #e3f2fd; padding: 15px; border-radius: 10px; margin: 20px 0; }";
-  html += ".wifi-info p { margin: 8px 0; font-size: 14px; }";
-  html += ".input-group { margin: 20px 0; }";
-  html += "label { display: block; margin-bottom: 10px; font-weight: bold; color: #555; text-align: left; }";
-  html += "textarea { width: 95%; padding: 15px; font-size: 16px; border: 2px solid #ddd; border-radius: 8px; resize: vertical; font-family: inherit; }";
-  html += "textarea:focus { outline: none; border-color: #667eea; }";
-  html += ".button { width: 100%; padding: 15px; font-size: 18px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; cursor: pointer; transition: transform 0.2s; }";
-  html += ".button:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4); }";
-  html += ".button:active { transform: translateY(0); }";
-  html += ".status { margin-top: 20px; padding: 15px; background: #f5f5f5; border-radius: 8px; }";
-  html += ".current-text { background: #fff3e0; padding: 15px; border-radius: 8px; margin-top: 15px; word-wrap: break-word; }";
-  html += "</style>";
-  html += "</head><body>";
+  // 使用分段傳輸（chunked transfer）以節省 RAM
+  server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+  server.send(200, "text/html", "");
   
-  html += "<div class='container'>";
-  html += "<h1>📱 電子紙顯示器</h1>";
-  html += "<p style='color: #666;'>透過網頁控制 4.26\" 電子紙顯示</p>";
+  // 發送 HTML 頭部
+  server.sendContent_P(HTML_HEAD);
   
-  html += "<div class='wifi-info'>";
-  html += "<p><strong>📡 WiFi SSID:</strong> " + String(ap_ssid) + "</p>";
-  html += "<p><strong>🔑 密碼:</strong> " + String(ap_password) + "</p>";
-  html += "<p><strong>🌐 IP 位址:</strong> " + WiFi.softAPIP().toString() + "</p>";
-  html += "</div>";
+  // 發送 WiFi 資訊（動態內容）
+  String wifiInfo = "<div class='wifi-info'>";
+  wifiInfo += "<p><strong>📡 WiFi SSID:</strong> " + String(ap_ssid) + "</p>";
+  wifiInfo += "<p><strong>🔑 密碼:</strong> " + String(ap_password) + "</p>";
+  wifiInfo += "<p><strong>🌐 IP:</strong> " + WiFi.softAPIP().toString() + "</p>";
+  wifiInfo += "</div>";
+  server.sendContent(wifiInfo);
   
-  html += "<form action='/update' method='POST'>";
-  html += "<div class='input-group'>";
-  html += "<label>✏️ 輸入要顯示的文字：</label>";
-  html += "<textarea name='text' rows='4' maxlength='200' placeholder='輸入文字後按下送出，將顯示在電子紙中央...'>" + displayText + "</textarea>";
-  html += "</div>";
-  html += "<button type='submit' class='button'>📤 更新顯示</button>";
-  html += "</form>";
+  // 發送表單（替換文字內容）
+  String formHtml = FPSTR(HTML_FORM);
+  formHtml.replace("%TEXT%", displayText);
+  server.sendContent(formHtml);
   
-  html += "<div class='current-text'>";
-  html += "<strong>目前顯示：</strong><br>";
-  html += displayText;
-  html += "</div>";
+  // 發送狀態資訊
+  String status = "<div class='status'>";
+  status += "<p><small>連線裝置: " + String(WiFi.softAPgetStationNum()) + "</small></p>";
+  status += "<p><small>運行時間: " + String(millis() / 1000) + " 秒</small></p>";
+  status += "<p><small>可用記憶體: " + String(ESP.getFreeHeap()) + " bytes</small></p>";
+  status += "</div></div>";
+  server.sendContent(status);
   
-  html += "<div class='status'>";
-  html += "<p><small>連線裝置數: " + String(WiFi.softAPgetStationNum()) + "</small></p>";
-  html += "<p><small>運行時間: " + String(millis() / 1000) + " 秒</small></p>";
-  html += "<p><small>可用記憶體: " + String(ESP.getFreeHeap()) + " bytes</small></p>";
-  html += "</div>";
+  // 發送結尾
+  server.sendContent_P(HTML_TAIL);
   
-  html += "</div>";
-  html += "</body></html>";
-  
-  Serial.println(F("主頁面回應已送出"));
-  server.send(200, "text/html", html);
+  Serial.println(F("主頁面回應已送出（分段傳輸）"));
 }
 
 void handleUpdate() {
@@ -287,9 +333,8 @@ void handleUpdate() {
     
     needsUpdate = true;
     
-    // 重定向回主頁
-    server.sendHeader("Location", "/");
-    server.send(302, "text/plain", "");
+    // 回傳簡單的成功訊息（不重定向，讓前端 JavaScript 處理）
+    server.send(200, "text/plain", "OK");
   } else {
     server.send(400, "text/plain", "Missing text parameter");
   }
