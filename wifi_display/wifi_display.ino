@@ -2,8 +2,8 @@
  * WiFi 電子紙顯示器控制程式
  * 
  * 功能：
- * - 建立 WiFi 熱點
- * - 在電子紙左上角顯示 WiFi SSID/密碼
+ * - 連接外部 WiFi AP 或建立 WiFi 熱點（編譯選項）
+ * - 在電子紙左上角顯示 WiFi 資訊
  * - 透過網頁輸入文字並顯示在電子紙中央
  * - 結合 GDEQ0426T82 電子紙和 WiFi 功能
  * 
@@ -11,8 +11,14 @@
  * - WeMos D1 Mini (ESP8266)
  * - GDEQ0426T82 4.26" 電子紙顯示器
  * 
- * 版本：v1.3 (進階功能版)
- * 日期：2025-10-03
+ * 版本：v1.4 (WiFi Station 模式)
+ * 日期：2025-10-04
+ * 
+ * v1.4 更新：
+ * - 新增 WiFi Station 模式（連接外部 AP）
+ * - 編譯選項切換 AP/Station 模式
+ * - 移除更新完成的 alert 彈窗
+ * - Station 模式顯示取得的 IP
  * 
  * v1.3 更新：
  * - GZIP 壓縮（HTML 傳輸減少 70%）
@@ -25,6 +31,12 @@
  * - AJAX 快速更新（無需重新載入頁面）
  * - 優化 TX 功率和通道設定
  */
+
+// ============================================
+// 編譯選項：WiFi 連線模式
+// ============================================
+// 註解下行以使用 AP 模式（熱點）
+#define USE_WIFI_STATION  // 預設使用 Station 模式（連接外部 WiFi）
 
 // ============================================
 // 包含函式庫
@@ -123,7 +135,7 @@ showProgress(data.progress,data.message);
 hideProgress();
 document.getElementById('currentText').textContent=data.text;
 document.getElementById('submitBtn').disabled=false;
-alert('✅ 更新完成！');
+// alert('✅ 更新完成！'); // 已移除：用戶反饋不需要彈出提示
 }else if(data.type==='status'){
 document.getElementById('currentText').textContent=data.text;
 }
@@ -164,8 +176,15 @@ window.onload=function(){initWebSocket();};
 // WiFi 設定
 // ============================================
 
-const char* ap_ssid = "EPaper_Display";
-const char* ap_password = "12345678";
+#ifdef USE_WIFI_STATION
+  // Station 模式：連接外部 WiFi AP
+  const char* wifi_ssid = "lulumi_ap";
+  const char* wifi_password = "1978120505";
+#else
+  // AP 模式：建立熱點
+  const char* ap_ssid = "EPaper_Display";
+  const char* ap_password = "12345678";
+#endif
 
 // ============================================
 // 伺服器設定
@@ -357,6 +376,70 @@ void loop() {
 // ============================================
 
 void setupWiFi() {
+#ifdef USE_WIFI_STATION
+  // ============================================
+  // Station 模式：連接外部 WiFi AP
+  // ============================================
+  Serial.println(F("設定 WiFi Station 模式..."));
+  
+  // 停用所有 WiFi 功能後重新啟動
+  WiFi.disconnect();
+  WiFi.softAPdisconnect(true);
+  delay(100);
+  
+  // 設定為 Station 模式
+  WiFi.mode(WIFI_STA);
+  delay(100);
+  
+  // 設定輸出功率為最高（提升信號強度）
+  WiFi.setOutputPower(20.5); // 最大 20.5 dBm
+  
+  // 啟用 802.11g/n 高速模式
+  wifi_set_phy_mode(PHY_MODE_11N);
+  
+  Serial.print(F("正在連接到 WiFi SSID: "));
+  Serial.println(wifi_ssid);
+  
+  WiFi.begin(wifi_ssid, wifi_password);
+  
+  // 等待連線（最多 30 秒）
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < 60) {
+    delay(500);
+    Serial.print(".");
+    attempts++;
+  }
+  Serial.println();
+  
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println(F("✓ WiFi 連線成功"));
+    
+    IPAddress IP = WiFi.localIP();
+    
+    Serial.println(F("========================================"));
+    Serial.println(F("WiFi Station 資訊："));
+    Serial.print(F("連接到 SSID: "));
+    Serial.println(wifi_ssid);
+    Serial.print(F("取得 IP 位址: "));
+    Serial.println(IP);
+    Serial.print(F("MAC 位址: "));
+    Serial.println(WiFi.macAddress());
+    Serial.print(F("信號強度: "));
+    Serial.print(WiFi.RSSI());
+    Serial.println(F(" dBm"));
+    Serial.println(F("請開啟瀏覽器訪問："));
+    Serial.print(F("http://"));
+    Serial.println(IP);
+    Serial.println(F("========================================"));
+  } else {
+    Serial.println(F("✗ WiFi 連線失敗"));
+    Serial.println(F("請檢查 SSID 和密碼是否正確"));
+  }
+  
+#else
+  // ============================================
+  // AP 模式：建立 WiFi 熱點
+  // ============================================
   Serial.println(F("設定 WiFi 熱點..."));
   
   // 停用所有 WiFi 功能後重新啟動
@@ -403,6 +486,7 @@ void setupWiFi() {
   Serial.print(F("http://"));
   Serial.println(IP);
   Serial.println(F("========================================"));
+#endif
 }
 
 // ============================================
@@ -463,9 +547,19 @@ void handleRoot() {
   
   // 發送 WiFi 資訊（動態內容）
   String wifiInfo = "<div class='wifi-info'>";
+  
+#ifdef USE_WIFI_STATION
+  // Station 模式：顯示連接的 SSID 和取得的 IP
+  wifiInfo += "<p><strong>📡 連接到:</strong> " + String(wifi_ssid) + "</p>";
+  wifiInfo += "<p><strong>🌐 IP 位址:</strong> " + WiFi.localIP().toString() + "</p>";
+  wifiInfo += "<p><strong>📶 信號:</strong> " + String(WiFi.RSSI()) + " dBm</p>";
+#else
+  // AP 模式：顯示熱點 SSID、密碼和 IP
   wifiInfo += "<p><strong>📡 WiFi SSID:</strong> " + String(ap_ssid) + "</p>";
   wifiInfo += "<p><strong>🔑 密碼:</strong> " + String(ap_password) + "</p>";
   wifiInfo += "<p><strong>🌐 IP:</strong> " + WiFi.softAPIP().toString() + "</p>";
+#endif
+  
   wifiInfo += "</div>";
   server.sendContent(wifiInfo);
   
@@ -542,6 +636,23 @@ void updateDisplay() {
     display.setTextColor(GxEPD_BLACK);
     display.setFont(&FreeMonoBold9pt7b);
     
+#ifdef USE_WIFI_STATION
+    // Station 模式：顯示連接的 WiFi 和 IP
+    display.setCursor(10, 20);
+    display.print(F("Connected:"));
+    display.setCursor(10, 40);
+    display.print(wifi_ssid);
+    
+    display.setCursor(10, 65);
+    display.print(F("IP: "));
+    display.print(WiFi.localIP());
+    
+    display.setCursor(10, 90);
+    display.print(F("Signal: "));
+    display.print(WiFi.RSSI());
+    display.print(F(" dBm"));
+#else
+    // AP 模式：顯示熱點資訊
     display.setCursor(10, 20);
     display.print(F("WiFi SSID:"));
     display.setCursor(10, 40);
@@ -555,6 +666,7 @@ void updateDisplay() {
     display.setCursor(10, 110);
     display.print(F("IP: "));
     display.print(WiFi.softAPIP());
+#endif
     
     // 畫一條分隔線
     display.drawLine(0, 130, display.width(), 130, GxEPD_BLACK);
