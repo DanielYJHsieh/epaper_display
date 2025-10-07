@@ -30,13 +30,30 @@
 WebSocketsClient webSocket;
 PacketReceiver packetReceiver;
 
-uint8_t* currentFrame = nullptr;  // 當前畫面緩衝
-// previousFrame 已移除以節省記憶體 - 不支援 Delta 更新
+#if ENABLE_CHUNKED_DISPLAY
+uint8_t* currentChunk = nullptr;  // 當前塊緩衝 (6KB)
+uint8_t* fullFrame = nullptr;     // 完整畫面緩衝 (僅在需要時分配)
+uint8_t currentChunkIndex = 0;    // 當前處理的塊索引
+bool useChunkedMode = true;       // 分塊模式開關
+#else
+uint8_t* currentFrame = nullptr;  // 當前畫面緩衝 (48KB)
+#endif
+
 bool frameAllocated = false;
 
 uint16_t currentSeqId = 0;
 unsigned long lastMemoryCheck = 0;
 unsigned long lastReconnectAttempt = 0;
+
+// ============================================
+// 函數前向宣告
+// ============================================
+#if ENABLE_CHUNKED_DISPLAY
+void handleFullUpdateChunked(const uint8_t* payload, uint32_t length);
+void displayFrameChunked(const uint8_t* frame);
+#endif
+uint8_t* allocateDisplayBuffer(const char* purpose);
+void safeFreeMem(uint8_t** buffer, const char* purpose);
 
 // ============================================
 // 顯示回調函數（串流處理用）
@@ -132,29 +149,69 @@ void handlePacket() {
 }
 
 // ============================================
-// 處理完整畫面更新
+// 處理完整畫面更新（優化版 - 支援動態記憶體）
 // ============================================
 void handleFullUpdate(const uint8_t* payload, uint32_t length) {
   Serial.println(F("處理完整更新..."));
   
   unsigned long startTime = millis();
   
-  // 記憶體應該已經在 setup() 中分配了
+#if ENABLE_CHUNKED_DISPLAY
+  // 動態分配記憶體模式
+  uint8_t* targetBuffer = nullptr;
+  bool usePureChunkMode = false;  // 純分塊模式標記
+  
+  if (useChunkedMode && ENABLE_DYNAMIC_ALLOCATION) {
+    // 使用輔助函數動態分配記憶體
+    targetBuffer = allocateDisplayBuffer("完整更新");
+    
+    if (!targetBuffer) {
+      Serial.println(F("*** 切換到純分塊處理模式 ***"));
+      usePureChunkMode = true;
+    }
+  } else if (fullFrame) {
+    targetBuffer = fullFrame;
+  } else {
+    Serial.println(F("*** 錯誤：沒有可用的顯示緩衝！***"));
+    sendNAK(currentSeqId);
+    return;
+  }
+  
+  // 如果是純分塊模式，直接處理分塊解壓縮和顯示
+  if (usePureChunkMode) {
+    handleFullUpdateChunked(payload, length);
+    sendACK(currentSeqId);
+    Serial.print(F("總耗時: "));
+    Serial.print(millis() - startTime);
+    Serial.println(F(" ms"));
+    return;
+  }
+#else
+  // 傳統模式
   if (!frameAllocated || !currentFrame) {
     Serial.println(F("*** 錯誤：顯示緩衝未分配！***"));
     sendNAK(currentSeqId);
     return;
   }
+  uint8_t* targetBuffer = currentFrame;
+#endif
   
   // 解壓縮
   Serial.println(F("解壓縮中..."));
-  int decompressedSize = RLEDecoder::decode(payload, length, currentFrame, DISPLAY_BUFFER_SIZE);
+  int decompressedSize = RLEDecoder::decode(payload, length, targetBuffer, DISPLAY_BUFFER_SIZE);
   
   if (decompressedSize != DISPLAY_BUFFER_SIZE) {
     Serial.print(F("解壓縮失敗！期望 "));
     Serial.print(DISPLAY_BUFFER_SIZE);
     Serial.print(F(" bytes, 得到 "));
     Serial.println(decompressedSize);
+    
+#if ENABLE_CHUNKED_DISPLAY
+    // 使用安全釋放函數
+    if (useChunkedMode && ENABLE_DYNAMIC_ALLOCATION && targetBuffer) {
+      safeFreeMem(&targetBuffer, "解壓縮失敗");
+    }
+#endif
     sendNAK(currentSeqId);
     return;
   }
@@ -165,9 +222,14 @@ void handleFullUpdate(const uint8_t* payload, uint32_t length) {
   
   // 顯示
   Serial.println(F("更新顯示中..."));
-  displayFrame(currentFrame);
+  displayFrame(targetBuffer);
   
-  // 不再儲存 previousFrame 以節省記憶體
+#if ENABLE_CHUNKED_DISPLAY
+  // 使用安全釋放函數
+  if (useChunkedMode && ENABLE_DYNAMIC_ALLOCATION && targetBuffer) {
+    safeFreeMem(&targetBuffer, "顯示完成");
+  }
+#endif
   
   Serial.print(F("總耗時: "));
   Serial.print(millis() - startTime);
@@ -176,6 +238,114 @@ void handleFullUpdate(const uint8_t* payload, uint32_t length) {
   // 發送 ACK
   sendACK(currentSeqId);
 }
+
+#if ENABLE_CHUNKED_DISPLAY
+// ============================================
+// 純分塊處理完整更新（改進版 - 多次重試）
+// ============================================
+void handleFullUpdateChunked(const uint8_t* payload, uint32_t length) {
+  Serial.println(F("*** 使用純分塊處理模式 ***"));
+  unsigned long startTime = millis();
+  
+  // 策略：多次嘗試分配，給系統時間釋放記憶體
+  uint8_t* tempBuffer = nullptr;
+  const int MAX_RETRY = 3;
+  
+  for (int retry = 0; retry < MAX_RETRY; retry++) {
+    if (retry > 0) {
+      Serial.print(F("*** 重試 "));
+      Serial.print(retry);
+      Serial.println(F(" 次 ***"));
+      
+      // 強制執行看門狗和記憶體清理
+      yield();
+      delay(10);  // 給系統一點時間
+    }
+    
+    uint32_t freeHeap = ESP.getFreeHeap();
+    uint32_t maxBlock = ESP.getMaxFreeBlockSize();
+    
+    Serial.print(F("嘗試 "));
+    Serial.print(retry + 1);
+    Serial.print(F("/"));
+    Serial.print(MAX_RETRY);
+    Serial.print(F(" - 可用: "));
+    Serial.print(freeHeap);
+    Serial.print(F(" bytes, 最大塊: "));
+    Serial.print(maxBlock);
+    Serial.println(F(" bytes"));
+    
+    if (maxBlock >= DISPLAY_BUFFER_SIZE) {
+      tempBuffer = (uint8_t*)malloc(DISPLAY_BUFFER_SIZE);
+      
+      if (tempBuffer) {
+        Serial.println(F("*** 緩衝區分配成功！***"));
+        break;
+      } else {
+        Serial.println(F("*** 分配失敗，但最大塊足夠？記憶體碎片問題 ***"));
+      }
+    } else {
+      Serial.print(F("*** 最大塊不足 (需要 "));
+      Serial.print(DISPLAY_BUFFER_SIZE);
+      Serial.println(F(" bytes) ***"));
+    }
+  }
+  
+  if (!tempBuffer) {
+    Serial.println(F("*** 多次嘗試後仍無法分配，採用降級顯示 ***"));
+    Serial.print(F("最終狀態 - 可用: "));
+    Serial.print(ESP.getFreeHeap());
+    Serial.print(F(" bytes, 最大塊: "));
+    Serial.print(ESP.getMaxFreeBlockSize());
+    Serial.println(F(" bytes"));
+    
+    // 降級處理：顯示白屏或錯誤圖案
+    Serial.println(F("*** 顯示白屏作為降級處理 ***"));
+    display.clearScreen();
+    display.refresh();
+    
+    Serial.print(F("降級處理耗時: "));
+    Serial.print(millis() - startTime);
+    Serial.println(F(" ms"));
+    return;
+  }
+  
+  Serial.println(F("*** 開始解壓縮 ***"));
+  
+  // 解壓縮到臨時緩衝區
+  int decompressedSize = RLEDecoder::decode(payload, length, tempBuffer, DISPLAY_BUFFER_SIZE);
+  
+  if (decompressedSize != DISPLAY_BUFFER_SIZE) {
+    Serial.print(F("解壓縮失敗！期望 "));
+    Serial.print(DISPLAY_BUFFER_SIZE);
+    Serial.print(F(" bytes, 得到 "));
+    Serial.println(decompressedSize);
+    
+    free(tempBuffer);
+    return;
+  }
+  
+  Serial.print(F("解壓縮完成: "));
+  Serial.print(millis() - startTime);
+  Serial.println(F(" ms"));
+  
+  // 使用分塊顯示
+  Serial.println(F("*** 使用分塊顯示模式 ***"));
+  displayFrameChunked(tempBuffer);
+  
+  // 立即釋放緩衝區
+  free(tempBuffer);
+  
+  Serial.print(F("*** 顯示完成，記憶體已釋放，可用: "));
+  Serial.print(ESP.getFreeHeap());
+  Serial.println(F(" bytes ***"));
+  
+  Serial.print(F("總耗時: "));
+  Serial.print(millis() - startTime);
+  Serial.println(F(" ms"));
+  Serial.println(F("*** 純分塊處理完成 ***"));
+}
+#endif
 
 // ============================================
 // 處理差分更新
@@ -203,10 +373,17 @@ void handleCommand(const uint8_t* payload, uint32_t length) {
       Serial.println(F("清空螢幕"));
       display.clearScreen();
       
-      // 重置緩衝
-      if (frameAllocated) {
+      // 重置緩衝（根據記憶體模式）
+#if ENABLE_CHUNKED_DISPLAY
+      if (fullFrame) {
+        memset(fullFrame, 0xFF, DISPLAY_BUFFER_SIZE);
+      }
+      // 動態模式不需要重置，因為會重新分配
+#else
+      if (frameAllocated && currentFrame) {
         memset(currentFrame, 0xFF, DISPLAY_BUFFER_SIZE);
       }
+#endif
       break;
       
     case CMD_SLEEP:
@@ -229,7 +406,7 @@ void handleCommand(const uint8_t* payload, uint32_t length) {
 }
 
 // ============================================
-// 顯示畫面
+// 顯示畫面（優化版 - 支援分塊顯示）
 // ============================================
 void displayFrame(const uint8_t* frame) {
   unsigned long startTime = millis();
@@ -244,17 +421,94 @@ void displayFrame(const uint8_t* frame) {
     Serial.print(ESP.getFreeHeap());
     Serial.println(F(" bytes ***"));
   }
-  
-  // 使用 writeImage 直接寫入，不需要 firstPage/nextPage
-  // 這樣可以避免 GxEPD2 的內部緩衝分配
+
+#if ENABLE_CHUNKED_DISPLAY
+  if (useChunkedMode) {
+    displayFrameChunked(frame);
+  } else {
+    // 傳統模式：將圖像顯示在螢幕中央
+    display.setPartialWindow(DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+    display.writeImage(frame, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, false, false, false);  // 最後參數 false = 不反相
+    display.refresh();
+  }
+#else
+  // 傳統模式：直接顯示完整畫面
   display.setFullWindow();
-  display.writeImage(frame, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, false, false, true);
+  display.writeImage(frame, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, false, false, false);  // 最後參數 false = 不反相
   display.refresh();
+#endif
   
   Serial.print(F("顯示更新耗時: "));
   Serial.print(millis() - startTime);
   Serial.println(F(" ms"));
 }
+
+#if ENABLE_CHUNKED_DISPLAY
+// ============================================
+// 分塊顯示函數（優化版 - 使用部分窗口）
+// ============================================
+void displayFrameChunked(const uint8_t* frame) {
+  Serial.println(F("*** 使用分塊顯示模式 ***"));
+  
+  for (uint8_t chunk = 0; chunk < MAX_CHUNKS; chunk++) {
+    uint16_t y_start = chunk * CHUNK_HEIGHT;
+    uint16_t y_end = min((chunk + 1) * CHUNK_HEIGHT, DISPLAY_HEIGHT);
+    uint16_t chunk_height = y_end - y_start;
+    
+    // 計算在原始緩衝區中的偏移位置
+    uint32_t chunk_offset = (y_start * DISPLAY_WIDTH) / 8;
+    
+    Serial.print(F("處理塊 "));
+    Serial.print(chunk + 1);
+    Serial.print(F("/"));
+    Serial.print(MAX_CHUNKS);
+    Serial.print(F(" (Y: "));
+    Serial.print(y_start);
+    Serial.print(F("-"));
+    Serial.print(y_end);
+    Serial.println(F(")"));
+    
+    // 設定部分窗口：考慮螢幕偏移量，將圖像顯示在中央
+    display.setPartialWindow(DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y + y_start, DISPLAY_WIDTH, chunk_height);
+    
+    // 使用標準 writeImage 函數寫入該塊
+    // 我們需要建立該塊的緩衝區
+    uint32_t chunk_buffer_size = (DISPLAY_WIDTH * chunk_height) / 8;
+    uint8_t* chunk_buffer = (uint8_t*)malloc(chunk_buffer_size);
+    
+    if (chunk_buffer) {
+      // 複製該塊的資料
+      memcpy(chunk_buffer, frame + chunk_offset, chunk_buffer_size);
+      
+      // 寫入該塊並立即刷新
+      display.writeImage(chunk_buffer, 0, 0, DISPLAY_WIDTH, chunk_height, false, false, true);
+      display.refresh(false);  // false = 不執行完整刷新，只更新部分窗口
+      
+      // 釋放塊緩衝區
+      free(chunk_buffer);
+      
+      Serial.print(F("  ✓ 塊 "));
+      Serial.print(chunk + 1);
+      Serial.println(F(" 寫入並刷新完成"));
+    } else {
+      Serial.print(F("  ✗ 塊 "));
+      Serial.print(chunk + 1);
+      Serial.println(F(" 記憶體分配失敗！"));
+    }
+    
+    // 顯示記憶體狀況
+    Serial.print(F("  可用記憶體: "));
+    Serial.print(ESP.getFreeHeap());
+    Serial.println(F(" bytes"));
+    
+    // 短暫延遲以避免看門狗觸發
+    yield();
+  }
+  
+  // 分塊顯示完成（不需要再次 refresh，每塊已經單獨刷新）
+  Serial.println(F("*** 分塊顯示完成 ***"));
+}
+#endif
 
 // ============================================
 // 發送 ACK
@@ -323,7 +577,57 @@ void connectWiFi() {
 }
 
 // ============================================
-// 記憶體監控
+// 記憶體碎片整理（啟動時呼叫）
+// ============================================
+void defragmentMemory() {
+  Serial.println(F("*** 嘗試整理記憶體碎片 ***"));
+  
+  uint32_t initialFree = ESP.getFreeHeap();
+  uint32_t initialMaxBlock = ESP.getMaxFreeBlockSize();
+  
+  Serial.print(F("整理前 - 可用: "));
+  Serial.print(initialFree);
+  Serial.print(F(" bytes, 最大塊: "));
+  Serial.print(initialMaxBlock);
+  Serial.println(F(" bytes"));
+  
+  // 嘗試分配和釋放一些記憶體塊來整理碎片
+  void* ptrs[10];
+  int allocated = 0;
+  
+  // 嘗試分配多個小塊
+  for (int i = 0; i < 10; i++) {
+    ptrs[i] = malloc(1024);  // 1KB 塊
+    if (ptrs[i]) {
+      allocated++;
+    } else {
+      break;
+    }
+  }
+  
+  // 釋放所有分配的塊
+  for (int i = 0; i < allocated; i++) {
+    free(ptrs[i]);
+  }
+  
+  uint32_t finalFree = ESP.getFreeHeap();
+  uint32_t finalMaxBlock = ESP.getMaxFreeBlockSize();
+  
+  Serial.print(F("整理後 - 可用: "));
+  Serial.print(finalFree);
+  Serial.print(F(" bytes, 最大塊: "));
+  Serial.print(finalMaxBlock);
+  Serial.println(F(" bytes"));
+  
+  if (finalMaxBlock > initialMaxBlock) {
+    Serial.println(F("*** 記憶體整理成功！***"));
+  } else {
+    Serial.println(F("*** 記憶體整理效果有限 ***"));
+  }
+}
+
+// ============================================
+// 記憶體監控（增強版）
 // ============================================
 void checkMemory() {
   unsigned long now = millis();
@@ -332,14 +636,117 @@ void checkMemory() {
     lastMemoryCheck = now;
     
     uint32_t freeHeap = ESP.getFreeHeap();
+    uint32_t maxFreeBlockSize = ESP.getMaxFreeBlockSize();
+    uint8_t heapFragmentation = 100 - ((maxFreeBlockSize * 100) / freeHeap);
     
-    Serial.print(F("可用記憶體: "));
+    Serial.print(F("記憶體狀況 - 可用: "));
     Serial.print(freeHeap);
-    Serial.println(F(" bytes"));
+    Serial.print(F(" bytes, 最大塊: "));
+    Serial.print(maxFreeBlockSize);
+    Serial.print(F(" bytes, 碎片化: "));
+    Serial.print(heapFragmentation);
+    Serial.println(F("%"));
+    
+#if ENABLE_CHUNKED_DISPLAY
+    // 檢查記憶體狀況並提供建議
+    if (ENABLE_DYNAMIC_ALLOCATION && useChunkedMode) {
+      if (maxFreeBlockSize < DISPLAY_BUFFER_SIZE) {
+        Serial.println(F("*** 提示：使用純分塊模式（記憶體碎片化） ***"));
+        if (maxFreeBlockSize < CHUNK_BUFFER_SIZE) {
+          Serial.println(F("*** 嚴重警告：連分塊緩衝都無法分配！***"));
+          Serial.println(F("*** 建議立即重啟以整理記憶體 ***"));
+        }
+      }
+    }
+#endif
     
     if (freeHeap < MEMORY_WARNING_THRESHOLD) {
       Serial.println(F("*** 警告：記憶體不足！***"));
+      
+      // 嘗試記憶體回收
+      if (heapFragmentation > 50) {
+        Serial.println(F("*** 記憶體碎片化嚴重，建議重啟 ***"));
+      }
     }
+  }
+}
+
+// ============================================
+// 記憶體分配輔助函數（智能版）
+// ============================================
+uint8_t* allocateDisplayBuffer(const char* purpose) {
+  Serial.print(F("*** 嘗試分配顯示緩衝區（"));
+  Serial.print(purpose);
+  Serial.println(F("）***"));
+  
+  uint32_t freeHeap = ESP.getFreeHeap();
+  uint32_t maxBlock = ESP.getMaxFreeBlockSize();
+  
+  Serial.print(F("分配前 - 可用: "));
+  Serial.print(freeHeap);
+  Serial.print(F(" bytes, 最大塊: "));
+  Serial.print(maxBlock);
+  Serial.println(F(" bytes"));
+  
+#if ENABLE_CHUNKED_DISPLAY
+  // 智能判斷：如果最大塊不足，直接返回 null 並切換到純分塊模式
+  if (maxBlock < DISPLAY_BUFFER_SIZE) {
+    Serial.println(F("*** 最大塊不足，切換到純分塊模式 ***"));
+    Serial.print(F("需要: "));
+    Serial.print(DISPLAY_BUFFER_SIZE);
+    Serial.print(F(" bytes, 最大塊: "));
+    Serial.print(maxBlock);
+    Serial.println(F(" bytes"));
+    
+    // 強制切換到分塊模式
+    useChunkedMode = true;
+    return nullptr;  // 返回 null，但這是正常行為
+  }
+#endif
+  
+  uint8_t* buffer = (uint8_t*)malloc(DISPLAY_BUFFER_SIZE);
+  
+  if (buffer) {
+    Serial.print(F("*** 分配成功，分配後可用: "));
+    Serial.print(ESP.getFreeHeap());
+    Serial.println(F(" bytes ***"));
+  } else {
+    Serial.println(F("*** 分配失敗！***"));
+    
+    Serial.print(F("需要: "));
+    Serial.print(DISPLAY_BUFFER_SIZE);
+    Serial.print(F(" bytes, 可用: "));
+    Serial.print(freeHeap);
+    Serial.print(F(" bytes, 最大塊: "));
+    Serial.print(maxBlock);
+    Serial.println(F(" bytes"));
+    
+#if ENABLE_CHUNKED_DISPLAY
+    // 強制切換到分塊模式
+    useChunkedMode = true;
+#endif
+  }
+  
+  return buffer;
+}
+
+// ============================================
+// 安全釋放記憶體
+// ============================================
+void safeFreeMem(uint8_t** buffer, const char* purpose) {
+  if (buffer && *buffer) {
+    Serial.print(F("*** 釋放記憶體（"));
+    Serial.print(purpose);
+    Serial.print(F("），釋放前可用: "));
+    Serial.print(ESP.getFreeHeap());
+    Serial.print(F(" bytes ***"));
+    
+    free(*buffer);
+    *buffer = nullptr;
+    
+    Serial.print(F("釋放後可用: "));
+    Serial.print(ESP.getFreeHeap());
+    Serial.println(F(" bytes"));
   }
 }
 
@@ -351,16 +758,44 @@ void setup() {
   delay(1000);  // 等待序列埠穩定
   Serial.println();
   Serial.println(F("================================="));
-  Serial.println(F("WiFi SPI Display - Client v1.0"));
-  Serial.println(F("=== 修改版 2024-10-04 ==="));  // 版本標記
+  Serial.println(F("WiFi SPI Display - Client v1.1"));
+  Serial.println(F("=== 記憶體優化版 2024-10-06 ==="));
   Serial.println(F("================================="));
   
-  // *** 優先分配記憶體（在記憶體最充足時） ***
+  // *** 記憶體碎片整理 ***
+  defragmentMemory();
+  
+  // *** 動態記憶體分配策略（優化版） ***
   Serial.print(F("*** [1/5] 啟動時可用記憶體: "));
   Serial.print(ESP.getFreeHeap());
   Serial.println(F(" bytes ***"));
   
-  Serial.println(F("*** [2/5] 預先分配 48KB 顯示緩衝... ***"));
+#if ENABLE_CHUNKED_DISPLAY
+  if (ENABLE_DYNAMIC_ALLOCATION) {
+    Serial.println(F("*** [2/5] 採用分塊顯示模式 - 動態分配 ***"));
+    Serial.print(F("每塊大小: "));
+    Serial.print(CHUNK_BUFFER_SIZE);
+    Serial.println(F(" bytes"));
+    
+    // 分塊模式下不預先分配大緩衝區
+    useChunkedMode = true;
+    frameAllocated = true;  // 標記為已分配（實際上是動態分配）
+  } else {
+    Serial.println(F("*** [2/5] 分塊模式 - 預先分配完整緩衝 ***"));
+    fullFrame = (uint8_t*)malloc(DISPLAY_BUFFER_SIZE);
+    
+    if (!fullFrame) {
+      Serial.println(F("*** 完整緩衝分配失敗，切換到動態模式 ***"));
+      useChunkedMode = true;
+      frameAllocated = true;
+    } else {
+      useChunkedMode = false;
+      frameAllocated = true;
+      Serial.println(F("*** ✓ 完整緩衝分配成功！***"));
+    }
+  }
+#else
+  Serial.println(F("*** [2/5] 傳統模式 - 預先分配 48KB 顯示緩衝 ***"));
   currentFrame = (uint8_t*)malloc(DISPLAY_BUFFER_SIZE);
   
   if (!currentFrame) {
@@ -373,6 +808,8 @@ void setup() {
   
   frameAllocated = true;
   Serial.println(F("*** ✓ 記憶體分配成功！***"));
+#endif
+
   Serial.print(F("*** 分配後可用記憶體: "));
   Serial.print(ESP.getFreeHeap());
   Serial.println(F(" bytes ***"));
@@ -400,6 +837,10 @@ void setup() {
   webSocket.begin(SERVER_HOST, SERVER_PORT, "/");
   webSocket.onEvent(webSocketEvent);
   webSocket.setReconnectInterval(5000);
+  
+  // 增加 WebSocket 接收緩衝區（預設太小）
+  // 對於 21KB 壓縮資料，需要更大的緩衝區
+  // 注意：這會增加記憶體使用
   
   // 跳過顯示準備畫面以節省記憶體
   // display.firstPage() 會分配 48KB 緩衝，導致記憶體不足

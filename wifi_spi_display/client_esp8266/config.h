@@ -22,15 +22,30 @@
 // ============================================
 // 顯示器設定
 // ============================================
-#define DISPLAY_WIDTH 800
-#define DISPLAY_HEIGHT 480
-#define DISPLAY_BUFFER_SIZE (DISPLAY_WIDTH * DISPLAY_HEIGHT / 8)  // 48000 bytes
+// 實際硬體: 800x480 螢幕，但只使用中央 400x240 區域
+#define PHYSICAL_WIDTH 800           // 實體螢幕寬度
+#define PHYSICAL_HEIGHT 480          // 實體螢幕高度
+#define DISPLAY_WIDTH 400            // 實際使用寬度
+#define DISPLAY_HEIGHT 240           // 實際使用高度
+#define DISPLAY_OFFSET_X ((PHYSICAL_WIDTH - DISPLAY_WIDTH) / 2)   // X偏移 = 200
+#define DISPLAY_OFFSET_Y ((PHYSICAL_HEIGHT - DISPLAY_HEIGHT) / 2) // Y偏移 = 120
+#define DISPLAY_BUFFER_SIZE (DISPLAY_WIDTH * DISPLAY_HEIGHT / 8)  // 12000 bytes (12KB)
+
+// ============================================
+// 記憶體優化設定
+// ============================================
+// 400x240 只需 12KB 緩衝區，ESP8266 可以輕鬆處理，不需要分塊！
+#define ENABLE_CHUNKED_DISPLAY 0     // 啟用分塊顯示（0=關閉, 1=開啟）
+#define CHUNK_HEIGHT 60              // 每塊高度（行數）- 分塊模式時使用
+#define CHUNK_BUFFER_SIZE (DISPLAY_WIDTH * CHUNK_HEIGHT / 8)  // 3000 bytes per chunk
+#define MAX_CHUNKS (DISPLAY_HEIGHT / CHUNK_HEIGHT)  // 總塊數 = 4
 
 // ============================================
 // 記憶體設定
 // ============================================
 #define RX_BUFFER_SIZE 512           // WebSocket 接收緩衝（bytes）
 #define STREAM_BUFFER_SIZE 256       // 流式解壓緩衝（bytes）
+#define ENABLE_DYNAMIC_ALLOCATION 1  // 啟用動態記憶體分配
 
 // ============================================
 // 連接設定

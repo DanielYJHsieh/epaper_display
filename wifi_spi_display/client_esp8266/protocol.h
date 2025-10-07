@@ -198,11 +198,25 @@ public:
       
       // 分配 payload 記憶體
       if (header.length > 0) {
+        // 檢查記憶體是否足夠
+        uint32_t freeHeap = ESP.getFreeHeap();
+        Serial.print(F("需要分配: "));
+        Serial.print(header.length);
+        Serial.print(F(" bytes, 可用: "));
+        Serial.print(freeHeap);
+        Serial.println(F(" bytes"));
+        
+        if (freeHeap < header.length + 8000) {  // 保留 8KB 安全餘量
+          Serial.println(F("記憶體不足！"));
+          return false;
+        }
+        
         payload = (uint8_t*)malloc(header.length);
         if (!payload) {
           Serial.println(F("記憶體分配失敗！"));
           return false;
         }
+        Serial.println(F("Payload 記憶體分配成功"));
       }
       
       // 如果還有資料，複製到 payload
@@ -213,6 +227,9 @@ public:
         }
         memcpy(payload, data + PROTO_HEADER_SIZE, payloadSize);
         payloadReceived = payloadSize;
+        
+        // 餵食看門狗
+        yield();
       }
       
       state = RECEIVING_PAYLOAD;
@@ -227,6 +244,9 @@ public:
       
       memcpy(payload + payloadReceived, data, toCopy);
       payloadReceived += toCopy;
+      
+      // 餵食看門狗
+      yield();
       
       return payloadReceived >= header.length;
     }

@@ -52,6 +52,11 @@ public:
         }
         output[outPos++] = value;
       }
+      
+      // 每處理一些資料就餵食看門狗
+      if ((inPos % 512) == 0) {
+        yield();
+      }
     }
     
     return outPos;

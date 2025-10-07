@@ -39,13 +39,13 @@ class DisplayServer:
         self.clients: Set[websockets.WebSocketServerProtocol] = set()
         self.seq_id = 0
         
-        # 初始化模組
-        self.processor = ImageProcessor(800, 480)
+        # 初始化模組 - 使用 400x240 解析度以適應 ESP8266 記憶體限制
+        self.processor = ImageProcessor(400, 240)
         self.compressor = RLECompressor()
         self.hybrid = HybridCompressor()
         
         logger.info(f"伺服器初始化完成")
-        logger.info(f"顯示器: 800x480, 48000 bytes")
+        logger.info(f"顯示器: 400x240 (實體螢幕 800x480 中央區域), 12000 bytes")
     
     async def register(self, websocket):
         """註冊客戶端"""
@@ -115,10 +115,14 @@ class DisplayServer:
             raw_data = self.processor.image_to_bytes(processed)
             logger.info(f"原始資料: {len(raw_data)} bytes")
             
-            # 壓縮
-            compressed = self.compressor.compress(raw_data)
+            # 智能壓縮：比較 RLE 和無壓縮，選擇較小的
+            compressed, is_compressed = self.compressor.compress_smart(raw_data)
             ratio = self.compressor.compress_ratio(len(raw_data), len(compressed))
-            logger.info(f"壓縮後: {len(compressed)} bytes (壓縮率: {ratio:.1f}%)")
+            
+            if is_compressed:
+                logger.info(f"壓縮後: {len(compressed)} bytes (壓縮率: {ratio:.1f}%, 使用 RLE)")
+            else:
+                logger.info(f"未壓縮: {len(compressed)} bytes (RLE 無效，使用原始資料)")
             
             # 打包協議
             self.seq_id += 1
@@ -156,10 +160,14 @@ class DisplayServer:
             raw_data = self.processor.image_to_bytes(img)
             logger.info(f"原始資料: {len(raw_data)} bytes")
             
-            # 壓縮
-            compressed = self.compressor.compress(raw_data)
+            # 智能壓縮
+            compressed, is_compressed = self.compressor.compress_smart(raw_data)
             ratio = self.compressor.compress_ratio(len(raw_data), len(compressed))
-            logger.info(f"壓縮後: {len(compressed)} bytes (壓縮率: {ratio:.1f}%)")
+            
+            if is_compressed:
+                logger.info(f"壓縮後: {len(compressed)} bytes (壓縮率: {ratio:.1f}%, 使用 RLE)")
+            else:
+                logger.info(f"未壓縮: {len(compressed)} bytes (RLE 無效，使用原始資料)")
             
             # 打包協議
             self.seq_id += 1
@@ -189,10 +197,14 @@ class DisplayServer:
             img = self.processor.create_test_pattern()
             raw_data = self.processor.image_to_bytes(img)
             
-            # 壓縮
-            compressed = self.compressor.compress(raw_data)
+            # 智能壓縮
+            compressed, is_compressed = self.compressor.compress_smart(raw_data)
             ratio = self.compressor.compress_ratio(len(raw_data), len(compressed))
-            logger.info(f"壓縮率: {ratio:.1f}%")
+            
+            if is_compressed:
+                logger.info(f"壓縮率: {ratio:.1f}% (使用 RLE)")
+            else:
+                logger.info(f"未壓縮 (RLE 無效，使用原始資料)")
             
             # 打包並發送
             self.seq_id += 1

@@ -11,12 +11,12 @@ from typing import Tuple
 class ImageProcessor:
     """圖像處理器，用於電子紙顯示"""
     
-    def __init__(self, width: int = 800, height: int = 480):
+    def __init__(self, width: int = 400, height: int = 240):
         """
         初始化圖像處理器
         
         Args:
-            width: 顯示器寬度（像素）
+            width: 顯示器寬度（像素）- 預設 400x240 以適應 ESP8266 記憶體限制
             height: 顯示器高度（像素）
         """
         self.width = width
@@ -153,7 +153,7 @@ class ImageProcessor:
         
         # 繪製文字
         draw.text((cx - 100, cy - 20), "TEST PATTERN", fill=0)
-        draw.text((cx - 80, cy + 10), "800 x 480", fill=0)
+        draw.text((cx - 80, cy + 10), "400 x 240", fill=0)
         
         return img
     

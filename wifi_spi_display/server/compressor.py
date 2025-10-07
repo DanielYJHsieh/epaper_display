@@ -48,6 +48,29 @@ class RLECompressor:
         return bytes(compressed)
     
     @staticmethod
+    def compress_smart(data: bytes) -> Tuple[bytes, bool]:
+        """
+        智能壓縮：比較 RLE 和無壓縮，選擇較小的
+        
+        Args:
+            data: 原始資料
+            
+        Returns:
+            (壓縮後資料, 是否使用了壓縮) tuple
+        """
+        if not data:
+            return b'', False
+        
+        # 先嘗試 RLE 壓縮
+        compressed = RLECompressor.compress(data)
+        
+        # 如果壓縮後反而變大，就不壓縮
+        if len(compressed) >= len(data):
+            return data, False  # 返回原始資料，標記為未壓縮
+        else:
+            return compressed, True  # 返回壓縮資料，標記為已壓縮
+    
+    @staticmethod
     def decompress(data: bytes, expected_size: Optional[int] = None) -> bytes:
         """
         RLE 解壓縮（用於測試）
