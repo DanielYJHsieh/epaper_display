@@ -430,13 +430,13 @@ void displayFrame(const uint8_t* frame) {
     // 傳統模式：將圖像顯示在螢幕中央（使用快速部分更新）
     display.setPartialWindow(DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_WIDTH, DISPLAY_HEIGHT);
     display.writeImage(frame, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, false, false, true);  // 最後參數 true = 反相（修正黑底白字問題）
-    display.refresh(false);  // false = 快速部分更新（所有更新都保持高速）
+    display.refresh(false);  // 快速部分更新
   }
 #else
   // 傳統模式：使用部分窗口快速更新
   display.setPartialWindow(DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_WIDTH, DISPLAY_HEIGHT);
   display.writeImage(frame, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, false, false, true);  // 最後參數 true = 反相（修正黑底白字問題）
-  display.refresh(false);  // false = 快速部分更新（所有更新都保持高速）
+  display.refresh(false);  // 快速部分更新
 #endif
   
   Serial.print(F("顯示更新耗時: "));
@@ -851,12 +851,57 @@ void setup() {
   display.setFullWindow();
   display.clearScreen();
   display.refresh(true);  // 完整刷新以確保清除乾淨
-  Serial.println(F("*** 螢幕清除完成 ***"));
+  
+  // 清屏後立即切換到部分窗口模式，確保第一次更新正常
+  display.setPartialWindow(DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+  Serial.println(F("*** 螢幕清除完成，已切換到部分窗口模式 ***"));
+  
+  // 顯示測試畫面
+  Serial.println(F("*** 顯示測試畫面... ***"));
+  displayTestPattern();
   
   Serial.println(F("初始化完成！"));
   Serial.print(F("可用記憶體: "));
   Serial.print(ESP.getFreeHeap());
   Serial.println(F(" bytes"));
+}
+
+// ============================================
+// 顯示測試畫面
+// ============================================
+void displayTestPattern() {
+  // 分配測試緩衝區
+  uint8_t* testBuffer = (uint8_t*)malloc(DISPLAY_BUFFER_SIZE);
+  if (!testBuffer) {
+    Serial.println(F("*** 無法分配測試緩衝區 ***"));
+    return;
+  }
+  
+  // 填充測試圖案：棋盤格
+  for (int y = 0; y < DISPLAY_HEIGHT; y++) {
+    for (int x = 0; x < DISPLAY_WIDTH; x++) {
+      int byteIndex = y * (DISPLAY_WIDTH / 8) + (x / 8);
+      int bitIndex = 7 - (x % 8);
+      
+      // 創建 20x20 的棋盤格
+      bool isBlack = ((x / 20) + (y / 20)) % 2 == 0;
+      
+      if (isBlack) {
+        testBuffer[byteIndex] &= ~(1 << bitIndex);  // 黑色
+      } else {
+        testBuffer[byteIndex] |= (1 << bitIndex);   // 白色
+      }
+    }
+  }
+  
+  // 顯示測試圖案
+  display.setPartialWindow(DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+  display.writeImage(testBuffer, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, false, false, true);
+  display.refresh(false);  // 快速部分更新
+  
+  // 釋放測試緩衝區
+  free(testBuffer);
+  Serial.println(F("*** 測試畫面顯示完成 ***"));
 }
 
 // ============================================
