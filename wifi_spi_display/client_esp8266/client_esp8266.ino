@@ -196,27 +196,38 @@ void handleFullUpdate(const uint8_t* payload, uint32_t length) {
   uint8_t* targetBuffer = currentFrame;
 #endif
   
-  // 解壓縮
-  Serial.println(F("解壓縮中..."));
-  int decompressedSize = RLEDecoder::decode(payload, length, targetBuffer, DISPLAY_BUFFER_SIZE);
+  // 智能判斷：如果資料長度等於緩衝區大小，表示未壓縮
+  bool isCompressed = (length != DISPLAY_BUFFER_SIZE);
   
-  if (decompressedSize != DISPLAY_BUFFER_SIZE) {
-    Serial.print(F("解壓縮失敗！期望 "));
-    Serial.print(DISPLAY_BUFFER_SIZE);
-    Serial.print(F(" bytes, 得到 "));
-    Serial.println(decompressedSize);
+  if (isCompressed) {
+    // 資料已壓縮，需要解壓縮
+    Serial.println(F("解壓縮中..."));
+    int decompressedSize = RLEDecoder::decode(payload, length, targetBuffer, DISPLAY_BUFFER_SIZE);
     
+    if (decompressedSize != DISPLAY_BUFFER_SIZE) {
+      Serial.print(F("解壓縮失敗！期望 "));
+      Serial.print(DISPLAY_BUFFER_SIZE);
+      Serial.print(F(" bytes, 得到 "));
+      Serial.println(decompressedSize);
+      
 #if ENABLE_CHUNKED_DISPLAY
-    // 使用安全釋放函數
-    if (useChunkedMode && ENABLE_DYNAMIC_ALLOCATION && targetBuffer) {
-      safeFreeMem(&targetBuffer, "解壓縮失敗");
-    }
+      // 使用安全釋放函數
+      if (useChunkedMode && ENABLE_DYNAMIC_ALLOCATION && targetBuffer) {
+        safeFreeMem(&targetBuffer, "解壓縮失敗");
+      }
 #endif
-    sendNAK(currentSeqId);
-    return;
+      sendNAK(currentSeqId);
+      return;
+    }
+    
+    Serial.print(F("解壓縮完成: "));
+  } else {
+    // 資料未壓縮，直接使用
+    Serial.println(F("資料未壓縮，直接複製..."));
+    memcpy(targetBuffer, payload, length);
+    Serial.print(F("複製完成: "));
   }
   
-  Serial.print(F("解壓縮完成: "));
   Serial.print(millis() - startTime);
   Serial.println(F(" ms"));
   
@@ -410,32 +421,22 @@ void handleCommand(const uint8_t* payload, uint32_t length) {
 // ============================================
 void displayFrame(const uint8_t* frame) {
   unsigned long startTime = millis();
-  
-  // 延遲初始化：第一次呼叫時才初始化顯示器
-  static bool displayInitialized = false;
-  if (!displayInitialized) {
-    Serial.println(F("*** 首次使用，初始化電子紙... ***"));
-    display.init(SERIAL_BAUD);
-    displayInitialized = true;
-    Serial.print(F("*** 初始化後可用記憶體: "));
-    Serial.print(ESP.getFreeHeap());
-    Serial.println(F(" bytes ***"));
-  }
+  Serial.println(F("更新顯示中..."));
 
 #if ENABLE_CHUNKED_DISPLAY
   if (useChunkedMode) {
     displayFrameChunked(frame);
   } else {
-    // 傳統模式：將圖像顯示在螢幕中央
+    // 傳統模式：將圖像顯示在螢幕中央（使用快速部分更新）
     display.setPartialWindow(DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_WIDTH, DISPLAY_HEIGHT);
-    display.writeImage(frame, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, false, false, false);  // 最後參數 false = 不反相
-    display.refresh();
+    display.writeImage(frame, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, false, false, true);  // 最後參數 true = 反相（修正黑底白字問題）
+    display.refresh(false);  // false = 快速部分更新（所有更新都保持高速）
   }
 #else
-  // 傳統模式：直接顯示完整畫面
-  display.setFullWindow();
-  display.writeImage(frame, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, false, false, false);  // 最後參數 false = 不反相
-  display.refresh();
+  // 傳統模式：使用部分窗口快速更新
+  display.setPartialWindow(DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+  display.writeImage(frame, 0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT, false, false, true);  // 最後參數 true = 反相（修正黑底白字問題）
+  display.refresh(false);  // false = 快速部分更新（所有更新都保持高速）
 #endif
   
   Serial.print(F("顯示更新耗時: "));
@@ -842,8 +843,15 @@ void setup() {
   // 對於 21KB 壓縮資料，需要更大的緩衝區
   // 注意：這會增加記憶體使用
   
-  // 跳過顯示準備畫面以節省記憶體
-  // display.firstPage() 會分配 48KB 緩衝，導致記憶體不足
+  // *** [5/5] 初始化電子紙顯示器並清除螢幕 ***
+  Serial.println(F("*** [5/5] 初始化電子紙顯示器... ***"));
+  display.init(SERIAL_BAUD);
+  
+  Serial.println(F("*** 清除整個螢幕（上電初始化）... ***"));
+  display.setFullWindow();
+  display.clearScreen();
+  display.refresh(true);  // 完整刷新以確保清除乾淨
+  Serial.println(F("*** 螢幕清除完成 ***"));
   
   Serial.println(F("初始化完成！"));
   Serial.print(F("可用記憶體: "));

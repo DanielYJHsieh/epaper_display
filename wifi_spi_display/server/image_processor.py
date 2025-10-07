@@ -69,9 +69,9 @@ class ImageProcessor:
         pixels = np.array(image, dtype=np.uint8)
         
         # 打包為 1-bit（8 pixels per byte）
-        # 注意：需要反轉顏色（PIL 的 '1' 模式：0=黑，255=白）
-        # 但電子紙通常：0=白，1=黑
-        pixels = (pixels == 0).astype(np.uint8)  # 反轉：黑色變成 1
+        # PIL 的 '1' 模式：0=黑，255=白
+        # 不反轉，直接使用：白色(255)變成1，黑色(0)變成0
+        pixels = (pixels > 0).astype(np.uint8)  # 白色像素 = 1, 黑色像素 = 0
         
         # 打包為 bytes
         packed = np.packbits(pixels, axis=1)
