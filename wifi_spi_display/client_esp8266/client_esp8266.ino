@@ -470,12 +470,12 @@ void handleTileUpdate(uint8_t* payload, uint32_t length, uint16_t seqId) {
     return;
   }
   
-  // 計算分區座標
+  // 計算分區座標（加上顯示偏移）
   // 分區排列：
   //   0 (左上): (0,0)     1 (右上): (400,0)
   //   2 (左下): (0,240)   3 (右下): (400,240)
-  uint16_t tile_x = (tileIndex % 2) * TILE_WIDTH;   // 0 or 400
-  uint16_t tile_y = (tileIndex / 2) * TILE_HEIGHT;  // 0 or 240
+  uint16_t tile_x = DISPLAY_OFFSET_X + (tileIndex % 2) * TILE_WIDTH;   // 0+offset or 400+offset
+  uint16_t tile_y = DISPLAY_OFFSET_Y + (tileIndex / 2) * TILE_HEIGHT;  // 0+offset or 240+offset
   
   const char* tileNames[] = {"左上", "右上", "左下", "右下"};
   Serial.println(F("========================================"));
@@ -493,15 +493,40 @@ void handleTileUpdate(uint8_t* payload, uint32_t length, uint16_t seqId) {
   Serial.print(TILE_HEIGHT);
   Serial.println(F(")"));
   
+  // 記憶體診斷和整理
+  Serial.print(F("🔍 分配前記憶體: 可用="));
+  Serial.print(ESP.getFreeHeap());
+  Serial.print(F(" bytes, 最大塊="));
+  Serial.print(ESP.getMaxFreeBlockSize());
+  Serial.println(F(" bytes"));
+  
+  // 強制垃圾收集和記憶體整理
+  yield();
+  delay(10);  // 給系統時間整理記憶體
+  
   // 分配緩衝區
   uint8_t* tileBuffer = (uint8_t*)malloc(TILE_BUFFER_SIZE);
   if (!tileBuffer) {
     Serial.print(F("❌ 無法分配分區緩衝區 ("));
     Serial.print(TILE_BUFFER_SIZE);
-    Serial.println(F(" bytes)"));
+    Serial.print(F(" bytes), 最大可用塊: "));
+    Serial.print(ESP.getMaxFreeBlockSize());
+    Serial.println(F(" bytes"));
+    
+    // 顯示更詳細的記憶體資訊
+    Serial.print(F("   總可用: "));
+    Serial.print(ESP.getFreeHeap());
+    Serial.print(F(" bytes, 碎片化程度: "));
+    uint32_t freeHeap = ESP.getFreeHeap();
+    uint32_t maxBlock = ESP.getMaxFreeBlockSize();
+    Serial.print((freeHeap - maxBlock) * 100 / freeHeap);
+    Serial.println(F("%"));
+    
     sendNAK(seqId);
     return;
   }
+  
+  Serial.println(F("✓ 緩衝區分配成功"));
   
   // 智能解壓縮
   bool isCompressed = (length != TILE_BUFFER_SIZE);
