@@ -11,8 +11,9 @@ from enum import IntEnum
 class PacketType(IntEnum):
     """封包類型"""
     FULL_UPDATE = 0x01    # 完整畫面更新
-    DELTA_UPDATE = 0x02   # 差分更新
-    COMMAND = 0x03        # 控制指令
+    TILE_UPDATE = 0x02    # 分區更新（新增）
+    DELTA_UPDATE = 0x03   # 差分更新
+    COMMAND = 0x04        # 控制指令
     ACK = 0x10           # 確認
     NAK = 0x11           # 否認（錯誤）
 
@@ -47,7 +48,7 @@ class Protocol:
         Returns:
             封包頭 bytes
         """
-        return struct.pack('!BBHi',
+        return struct.pack('<BBHI',  # 改用小端序，與 ESP8266 一致
                           Protocol.HEADER_MAGIC,
                           packet_type,
                           seq_id,
@@ -67,7 +68,7 @@ class Protocol:
         if len(data) < Protocol.HEADER_SIZE:
             raise ValueError(f"資料太短: {len(data)} < {Protocol.HEADER_SIZE}")
         
-        return struct.unpack('!BBHi', data[:Protocol.HEADER_SIZE])
+        return struct.unpack('<BBHI', data[:Protocol.HEADER_SIZE])  # 改用小端序
     
     @staticmethod
     def pack_full_frame(seq_id: int, data: bytes) -> bytes:
@@ -83,6 +84,24 @@ class Protocol:
         """
         header = Protocol.pack_header(PacketType.FULL_UPDATE, seq_id, len(data))
         return header + data
+    
+    @staticmethod
+    def pack_tile(seq_id: int, tile_index: int, data: bytes) -> bytes:
+        """
+        打包分區更新
+        
+        Args:
+            seq_id: 序號
+            tile_index: 分區索引 (0~3)
+            data: 壓縮後的分區圖像資料
+            
+        Returns:
+            完整封包
+        """
+        # Payload = tile_index(1 byte) + tile_data
+        payload = struct.pack('<B', tile_index) + data  # 小端序（其實 1 byte 無所謂）
+        header = Protocol.pack_header(PacketType.TILE_UPDATE, seq_id, len(payload))
+        return header + payload
     
     @staticmethod
     def pack_delta(seq_id: int, regions: List[Tuple[int, int, int, int, bytes]]) -> bytes:

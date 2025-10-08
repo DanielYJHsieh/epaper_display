@@ -133,6 +133,10 @@ void handlePacket() {
       handleFullUpdate(payload, header.length);
       break;
       
+    case PROTO_TYPE_TILE:
+      handleTileUpdate((uint8_t*)payload, header.length, header.seq_id);
+      break;
+      
     case PROTO_TYPE_DELTA:
       handleDeltaUpdate(payload, header.length);
       break;
@@ -442,6 +446,114 @@ void displayFrame(const uint8_t* frame) {
   Serial.print(F("顯示更新耗時: "));
   Serial.print(millis() - startTime);
   Serial.println(F(" ms"));
+}
+
+// ============================================
+// 處理分區更新（800×480 全螢幕分 4 區塊）
+// ============================================
+void handleTileUpdate(uint8_t* payload, uint32_t length, uint16_t seqId) {
+  // 解析分區索引
+  if (length < 1) {
+    Serial.println(F("❌ 分區資料長度不足"));
+    sendNAK(seqId);
+    return;
+  }
+  
+  uint8_t tileIndex = payload[0];
+  payload++;  // 跳過 tile_index
+  length--;   // 減去 tile_index 長度
+  
+  if (tileIndex >= TILE_COUNT) {
+    Serial.print(F("❌ 無效的分區索引: "));
+    Serial.println(tileIndex);
+    sendNAK(seqId);
+    return;
+  }
+  
+  // 計算分區座標
+  // 分區排列：
+  //   0 (左上): (0,0)     1 (右上): (400,0)
+  //   2 (左下): (0,240)   3 (右下): (400,240)
+  uint16_t tile_x = (tileIndex % 2) * TILE_WIDTH;   // 0 or 400
+  uint16_t tile_y = (tileIndex / 2) * TILE_HEIGHT;  // 0 or 240
+  
+  const char* tileNames[] = {"左上", "右上", "左下", "右下"};
+  Serial.println(F("========================================"));
+  Serial.print(F("📍 分區更新: "));
+  Serial.print(tileNames[tileIndex]);
+  Serial.print(F(" (索引="));
+  Serial.print(tileIndex);
+  Serial.print(F(", 座標=("));
+  Serial.print(tile_x);
+  Serial.print(F(","));
+  Serial.print(tile_y);
+  Serial.print(F("), 尺寸="));
+  Serial.print(TILE_WIDTH);
+  Serial.print(F("×"));
+  Serial.print(TILE_HEIGHT);
+  Serial.println(F(")"));
+  
+  // 分配緩衝區
+  uint8_t* tileBuffer = (uint8_t*)malloc(TILE_BUFFER_SIZE);
+  if (!tileBuffer) {
+    Serial.print(F("❌ 無法分配分區緩衝區 ("));
+    Serial.print(TILE_BUFFER_SIZE);
+    Serial.println(F(" bytes)"));
+    sendNAK(seqId);
+    return;
+  }
+  
+  // 智能解壓縮
+  bool isCompressed = (length != TILE_BUFFER_SIZE);
+  int decompressedSize;
+  
+  if (isCompressed) {
+    Serial.print(F("🗜️  解壓縮分區資料: "));
+    Serial.print(length);
+    Serial.print(F(" bytes → "));
+    unsigned long decompressStart = millis();
+    decompressedSize = RLEDecoder::decode(payload, length, tileBuffer, TILE_BUFFER_SIZE);
+    unsigned long decompressTime = millis() - decompressStart;
+    Serial.print(decompressedSize);
+    Serial.print(F(" bytes ("));
+    Serial.print(decompressTime);
+    Serial.println(F(" ms)"));
+  } else {
+    Serial.println(F("📦 直接使用未壓縮資料"));
+    memcpy(tileBuffer, payload, length);
+    decompressedSize = length;
+  }
+  
+  if (decompressedSize != TILE_BUFFER_SIZE) {
+    Serial.print(F("❌ 分區資料大小錯誤: 預期 "));
+    Serial.print(TILE_BUFFER_SIZE);
+    Serial.print(F(" bytes, 實際 "));
+    Serial.print(decompressedSize);
+    Serial.println(F(" bytes"));
+    free(tileBuffer);
+    sendNAK(seqId);
+    return;
+  }
+  
+  // 顯示分區
+  Serial.println(F("🖼️  更新分區顯示..."));
+  unsigned long displayStart = millis();
+  
+  display.setPartialWindow(tile_x, tile_y, TILE_WIDTH, TILE_HEIGHT);
+  display.writeImage(tileBuffer, 0, 0, TILE_WIDTH, TILE_HEIGHT, false, false, true);
+  display.refresh(false);  // 快速部分更新
+  
+  unsigned long displayTime = millis() - displayStart;
+  
+  free(tileBuffer);
+  sendACK(seqId);
+  
+  Serial.print(F("✅ 分區 "));
+  Serial.print(tileNames[tileIndex]);
+  Serial.print(F(" 更新完成 ("));
+  Serial.print(displayTime);
+  Serial.println(F(" ms)"));
+  Serial.println(F("========================================"));
 }
 
 #if ENABLE_CHUNKED_DISPLAY

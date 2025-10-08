@@ -1,15 +1,7 @@
 /*
- * WiFi SPI Display - 設定檔#define DISPLAY_OFFSET_Y ((PHYSICAL_HEIGHT - DISPLAY_HEIGHT) / 2) // Y偏移 = 120
-#define DISPLAY_BUFFER_SIZE (DISPLAY_WIDTH * DISPLAY_HEIGHT / 8)  // 12000 bytes (12KB)
-
-// ============================================
-// 記憶體優化設定
-// ============================================
-// 400x240 只需 12KB 緩衝區，ESP8266 可以輕鬆處理，不需要分塊！
-#define ENABLE_CHUNKED_DISPLAY 0     // 啟用分塊顯示（0=關閉, 1=開啟）
-#define CHUNK_HEIGHT 60              // 每塊高度（行數）- 分塊模式時使用
-#define CHUNK_BUFFER_SIZE (DISPLAY_WIDTH * CHUNK_HEIGHT / 8)  // 3000 bytes per chunk
-#define MAX_CHUNKS (DISPLAY_HEIGHT / CHUNK_HEIGHT)  // 總塊數 = 4 WiFi 連線和 Server 資訊
+ * WiFi SPI Display - 設定檔
+ * 
+ * 設定 WiFi 連線和 Server 資訊
  */
 
 #ifndef CONFIG_H
@@ -30,22 +22,30 @@
 // ============================================
 // 顯示器設定
 // ============================================
-// 實際硬體: 800x480 螢幕，使用左上角 400x240 區域（不置中）
+// 實際硬體: 800x480 螢幕，但只使用中央 400x240 區域
 #define PHYSICAL_WIDTH 800           // 實體螢幕寬度
 #define PHYSICAL_HEIGHT 480          // 實體螢幕高度
 #define DISPLAY_WIDTH 400            // 實際使用寬度
 #define DISPLAY_HEIGHT 240           // 實際使用高度
-#define DISPLAY_OFFSET_X 0           // X偏移 = 0 (左上角)
-#define DISPLAY_OFFSET_Y 0           // Y偏移 = 0 (左上角)
+#define DISPLAY_OFFSET_X ((PHYSICAL_WIDTH - DISPLAY_WIDTH) / 2)   // X偏移 = 200
+#define DISPLAY_OFFSET_Y ((PHYSICAL_HEIGHT - DISPLAY_HEIGHT) / 2) // Y偏移 = 120
 #define DISPLAY_BUFFER_SIZE (DISPLAY_WIDTH * DISPLAY_HEIGHT / 8)  // 12000 bytes (12KB)
+
+// ============================================
+// 分區顯示設定（800×480 全螢幕使用）
+// ============================================
+#define ENABLE_TILE_DISPLAY 1        // 啟用分區顯示（0=關閉, 1=開啟）
+#define TILE_WIDTH 400               // 分區寬度
+#define TILE_HEIGHT 240              // 分區高度
+#define TILE_BUFFER_SIZE (TILE_WIDTH * TILE_HEIGHT / 8)  // 12000 bytes (12KB) per tile
 
 // ============================================
 // 記憶體優化設定
 // ============================================
-// 480x320 需要 19.2KB 緩衝區，ESP8266 可以安全處理，不需要分塊！
+// 400x240 只需 12KB 緩衝區，ESP8266 可以輕鬆處理，不需要分塊！
 #define ENABLE_CHUNKED_DISPLAY 0     // 啟用分塊顯示（0=關閉, 1=開啟）
-#define CHUNK_HEIGHT 80              // 每塊高度（行數）- 分塊模式時使用
-#define CHUNK_BUFFER_SIZE (DISPLAY_WIDTH * CHUNK_HEIGHT / 8)  // 4800 bytes per chunk
+#define CHUNK_HEIGHT 60              // 每塊高度（行數）- 分塊模式時使用
+#define CHUNK_BUFFER_SIZE (DISPLAY_WIDTH * CHUNK_HEIGHT / 8)  // 3000 bytes per chunk
 #define MAX_CHUNKS (DISPLAY_HEIGHT / CHUNK_HEIGHT)  // 總塊數 = 4
 
 // ============================================

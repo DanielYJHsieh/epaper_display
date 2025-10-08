@@ -19,10 +19,20 @@
 // 封包類型
 // ============================================
 #define PROTO_TYPE_FULL 0x01     // 完整畫面更新
-#define PROTO_TYPE_DELTA 0x02    // 差分更新
-#define PROTO_TYPE_CMD 0x03      // 控制指令
+#define PROTO_TYPE_TILE 0x02     // 分區更新（新增）
+#define PROTO_TYPE_DELTA 0x03    // 差分更新
+#define PROTO_TYPE_CMD 0x04      // 控制指令
 #define PROTO_TYPE_ACK 0x10      // 確認
 #define PROTO_TYPE_NAK 0x11      // 否認（錯誤）
+
+// ============================================
+// 分區索引定義
+// ============================================
+#define TILE_INDEX_LEFT_TOP     0  // 左上區域
+#define TILE_INDEX_RIGHT_TOP    1  // 右上區域
+#define TILE_INDEX_LEFT_BOTTOM  2  // 左下區域
+#define TILE_INDEX_RIGHT_BOTTOM 3  // 右下區域
+#define TILE_COUNT              4  // 總區域數
 
 // ============================================
 // 控制指令
@@ -44,6 +54,13 @@ struct PacketHeader {
 } __attribute__((packed));
 
 // ============================================
+// 分區資訊結構
+// ============================================
+struct TileInfo {
+  uint8_t tile_index;  // 區域索引 (0~3)
+} __attribute__((packed));
+
+// ============================================
 // 協議解析器
 // ============================================
 class ProtocolParser {
@@ -62,11 +79,12 @@ public:
     
     header.header = data[0];
     header.type = data[1];
-    header.seq_id = (data[2] << 8) | data[3];
-    header.length = ((uint32_t)data[4] << 24) | 
-                    ((uint32_t)data[5] << 16) | 
-                    ((uint32_t)data[6] << 8) | 
-                    data[7];
+    // 小端序 (Little-Endian) - 與 Python struct.pack('<BBHI') 一致
+    header.seq_id = data[2] | (data[3] << 8);
+    header.length = data[4] | 
+                    (data[5] << 8) | 
+                    (data[6] << 16) | 
+                    ((uint32_t)data[7] << 24);
     
     return true;
   }
@@ -97,12 +115,13 @@ public:
   static size_t packACK(uint16_t seq_id, uint8_t* buffer, uint8_t status = 1) {
     buffer[0] = PROTO_HEADER;
     buffer[1] = PROTO_TYPE_ACK;
-    buffer[2] = (seq_id >> 8) & 0xFF;
-    buffer[3] = seq_id & 0xFF;
-    buffer[4] = 0;  // length MSB
+    // 小端序 (Little-Endian)
+    buffer[2] = seq_id & 0xFF;
+    buffer[3] = (seq_id >> 8) & 0xFF;
+    buffer[4] = 1;  // length = 1 (小端序)
     buffer[5] = 0;
     buffer[6] = 0;
-    buffer[7] = 1;  // length = 1
+    buffer[7] = 0;
     buffer[8] = status;
     
     return 9;  // 8 + 1 bytes
@@ -118,12 +137,13 @@ public:
   static size_t packNAK(uint16_t seq_id, uint8_t* buffer) {
     buffer[0] = PROTO_HEADER;
     buffer[1] = PROTO_TYPE_NAK;
-    buffer[2] = (seq_id >> 8) & 0xFF;
-    buffer[3] = seq_id & 0xFF;
-    buffer[4] = 0;
+    // 小端序 (Little-Endian)
+    buffer[2] = seq_id & 0xFF;
+    buffer[3] = (seq_id >> 8) & 0xFF;
+    buffer[4] = 1;  // length = 1 (小端序)
     buffer[5] = 0;
     buffer[6] = 0;
-    buffer[7] = 1;
+    buffer[7] = 0;
     buffer[8] = 0;
     
     return 9;
@@ -138,6 +158,7 @@ public:
   static const char* getTypeName(uint8_t type) {
     switch (type) {
       case PROTO_TYPE_FULL: return "FULL_UPDATE";
+      case PROTO_TYPE_TILE: return "TILE_UPDATE";
       case PROTO_TYPE_DELTA: return "DELTA_UPDATE";
       case PROTO_TYPE_CMD: return "COMMAND";
       case PROTO_TYPE_ACK: return "ACK";

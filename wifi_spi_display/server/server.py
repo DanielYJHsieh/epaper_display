@@ -39,13 +39,16 @@ class DisplayServer:
         self.clients: Set[websockets.WebSocketServerProtocol] = set()
         self.seq_id = 0
         
-        # 初始化模組 - 使用 400x240 解析度以適應 ESP8266 記憶體限制
+        # 初始化模組
+        # processor: 400x240 用於中央區域顯示 (向後兼容)
         self.processor = ImageProcessor(400, 240)
+        # processor_800: 800x480 用於全螢幕分區顯示 (新增)
+        self.processor_800 = ImageProcessor(800, 480)
         self.compressor = RLECompressor()
         self.hybrid = HybridCompressor()
         
         logger.info(f"伺服器初始化完成")
-        logger.info(f"顯示器: 400x240 (實體螢幕 800x480 中央區域), 12000 bytes")
+        logger.info(f"顯示器: 400x240 (中央區域) / 800x480 (全螢幕分區)")
     
     async def register(self, websocket):
         """註冊客戶端"""
@@ -219,6 +222,90 @@ class DisplayServer:
         except Exception as e:
             logger.error(f"發送測試圖案失敗: {e}")
     
+    async def send_tiled_image(self, image_path: str):
+        """
+        發送 800×480 圖片（分 4 個 400×240 區塊）
+        
+        分區順序：
+            0 (左上) → 1 (右上) → 2 (左下) → 3 (右下)
+        
+        Args:
+            image_path: 圖片檔案路徑
+        """
+        if not self.clients:
+            logger.warning("沒有連接的客戶端")
+            return
+        
+        logger.info(f"=== 開始分區傳輸: {image_path} ===")
+        
+        try:
+            # 載入圖片
+            img = Image.open(image_path)
+            logger.info(f"原始圖片: {img.size}, 模式: {img.mode}")
+            
+            # 轉換為 1-bit (使用 800x480 處理器)
+            processed = self.processor_800.convert_to_1bit(img, dither=True)
+            logger.info(f"轉換為 1-bit: {processed.size}")
+            
+            # 分割成 4 個區塊
+            tiles = self.processor_800.split_image_to_tiles(processed)
+            logger.info(f"分割成 {len(tiles)} 個區塊 (400×240 each)")
+            
+            tile_names = ["左上", "右上", "左下", "右下"]
+            total_compressed = 0
+            total_raw = 0
+            
+            # 依序發送 4 個區塊
+            for tile_index in range(4):
+                logger.info(f"\n--- 處理分區 {tile_index} ({tile_names[tile_index]}) ---")
+                
+                tile_image = tiles[tile_index]
+                
+                # 處理區塊（轉換為 bytes）
+                tile_data = self.processor_800.process_tile(tile_image, dither=True)
+                logger.info(f"區塊資料: {len(tile_data)} bytes")
+                total_raw += len(tile_data)
+                
+                # 智能壓縮
+                compressed_data, is_compressed = self.compressor.compress_smart(tile_data)
+                ratio = self.compressor.compress_ratio(len(tile_data), len(compressed_data))
+                
+                if is_compressed:
+                    logger.info(f"壓縮後: {len(compressed_data)} bytes (壓縮率: {ratio:.1f}%, 使用 RLE)")
+                else:
+                    logger.info(f"未壓縮: {len(compressed_data)} bytes (RLE 無效)")
+                
+                total_compressed += len(compressed_data)
+                
+                # 創建分區封包
+                self.seq_id += 1
+                packet = Protocol.pack_tile(self.seq_id, tile_index, compressed_data)
+                logger.info(f"封包大小: {len(packet)} bytes (含標頭)")
+                
+                # 發送到所有客戶端
+                logger.info(f"發送分區 {tile_index} 到 {len(self.clients)} 個客戶端...")
+                await asyncio.gather(
+                    *[client.send(packet) for client in self.clients],
+                    return_exceptions=True
+                )
+                logger.info(f"✓ 分區 {tile_index} ({tile_names[tile_index]}) 發送完成")
+                
+                # 等待 ESP8266 處理完成（顯示需要約 18 秒）
+                # 給予充足時間以避免記憶體碎片化問題
+                logger.info(f"等待分區 {tile_index} 顯示完成...")
+                await asyncio.sleep(20)  # 等待 20 秒確保顯示完成並釋放記憶體
+            
+            # 統計資訊
+            overall_ratio = self.compressor.compress_ratio(total_raw, total_compressed)
+            logger.info(f"\n=== 分區傳輸完成 ===")
+            logger.info(f"總原始資料: {total_raw} bytes")
+            logger.info(f"總壓縮資料: {total_compressed} bytes")
+            logger.info(f"整體壓縮率: {overall_ratio:.1f}%")
+            logger.info(f"4 個區塊全部發送完成")
+            
+        except Exception as e:
+            logger.error(f"發送分區圖片失敗: {e}")
+    
     async def send_command(self, command: Command, param: int = 0):
         """
         發送控制指令
@@ -263,8 +350,9 @@ async def interactive_mode(server: DisplayServer):
     print("WiFi SPI Display Server - 互動模式")
     print("="*50)
     print("\n指令:")
-    print("  text <文字>       - 發送文字")
-    print("  image <檔案>      - 發送圖片")
+    print("  text <文字>       - 發送文字 (400×240 中央顯示)")
+    print("  image <檔案>      - 發送圖片 (400×240 中央顯示)")
+    print("  tile <檔案>       - 發送圖片 (800×480 分區顯示)")
     print("  test              - 發送測試圖案")
     print("  clear             - 清空螢幕")
     print("  clients           - 顯示連接的客戶端")
@@ -299,6 +387,8 @@ async def interactive_mode(server: DisplayServer):
                 await server.send_text(parts[1])
             elif action == "image" and len(parts) > 1:
                 await server.send_image(parts[1])
+            elif action == "tile" and len(parts) > 1:
+                await server.send_tiled_image(parts[1])
             else:
                 print("未知指令或缺少參數")
         
