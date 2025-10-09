@@ -266,14 +266,10 @@ class DisplayServer:
                 logger.info(f"區塊資料: {len(tile_data)} bytes")
                 total_raw += len(tile_data)
                 
-                # 智能壓縮
-                compressed_data, is_compressed = self.compressor.compress_smart(tile_data)
-                ratio = self.compressor.compress_ratio(len(tile_data), len(compressed_data))
-                
-                if is_compressed:
-                    logger.info(f"壓縮後: {len(compressed_data)} bytes (壓縮率: {ratio:.1f}%, 使用 RLE)")
-                else:
-                    logger.info(f"未壓縮: {len(compressed_data)} bytes (RLE 無效)")
+                # **不使用壓縮**，直接發送未壓縮資料以避免 ESP8266 記憶體碎片化問題
+                compressed_data = tile_data
+                is_compressed = False
+                logger.info(f"發送未壓縮資料: {len(compressed_data)} bytes（避免記憶體碎片化）")
                 
                 total_compressed += len(compressed_data)
                 
@@ -290,10 +286,10 @@ class DisplayServer:
                 )
                 logger.info(f"✓ 分區 {tile_index} ({tile_names[tile_index]}) 發送完成")
                 
-                # 等待 ESP8266 處理完成（顯示需要約 18 秒）
-                # 給予充足時間以避免記憶體碎片化問題
+                # ESP8266 會在顯示完成後才發送 ACK
+                # 等待足夠時間確保 ESP8266 完成 refresh (約18秒) 並釋放記憶體
                 logger.info(f"等待分區 {tile_index} 顯示完成...")
-                await asyncio.sleep(20)  # 等待 20 秒確保顯示完成並釋放記憶體
+                await asyncio.sleep(10)  # 等待 20 秒確保 refresh 完成並釋放記憶體
             
             # 統計資訊
             overall_ratio = self.compressor.compress_ratio(total_raw, total_compressed)

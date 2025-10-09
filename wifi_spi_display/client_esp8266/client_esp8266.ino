@@ -30,6 +30,12 @@
 WebSocketsClient webSocket;
 PacketReceiver packetReceiver;
 
+// 分區顯示專用緩衝區（預先配置）
+#if ENABLE_TILE_DISPLAY
+uint8_t* tileBuffer = nullptr;     // 分區緩衝 (12KB)
+bool tileBufferAllocated = false;
+#endif
+
 #if ENABLE_CHUNKED_DISPLAY
 uint8_t* currentChunk = nullptr;  // 當前塊緩衝 (6KB)
 uint8_t* fullFrame = nullptr;     // 完整畫面緩衝 (僅在需要時分配)
@@ -88,10 +94,37 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
         Serial.print(length);
         Serial.println(F(" bytes"));
         
+        // 在處理封包前，設置使用 tileBuffer 作為外部緩衝區（如果已配置）
+        #if ENABLE_TILE_DISPLAY
+        if (tileBufferAllocated && tileBuffer) {
+          packetReceiver.setExternalBuffer(tileBuffer, TILE_BUFFER_SIZE);
+        }
+        #endif
+        
         // 處理封包
         if (packetReceiver.process(payload, length)) {
           handlePacket();
-          packetReceiver.reset();
+          
+          // 注意：handleTileUpdate 內部會提前 reset，這裡檢查是否已 reset
+          // 如果還沒 reset，則 reset（適用於非 TILE 類型的封包）
+          if (packetReceiver.getPayload() != nullptr) {
+            packetReceiver.reset();
+          }
+          
+          // 清除外部緩衝區設置
+          #if ENABLE_TILE_DISPLAY
+          packetReceiver.clearExternalBuffer();
+          #endif
+          
+          // 立即觸發記憶體整理
+          yield();
+          
+          // 顯示 reset 後的記憶體狀況
+          Serial.print(F("📊 Packet處理完成後記憶體: 可用="));
+          Serial.print(ESP.getFreeHeap());
+          Serial.print(F(" bytes, 最大塊="));
+          Serial.print(ESP.getMaxFreeBlockSize());
+          Serial.println(F(" bytes"));
         }
       }
       break;
@@ -470,12 +503,12 @@ void handleTileUpdate(uint8_t* payload, uint32_t length, uint16_t seqId) {
     return;
   }
   
-  // 計算分區座標（加上顯示偏移）
+  // 計算分區座標（直接使用全螢幕，不加偏移）
   // 分區排列：
   //   0 (左上): (0,0)     1 (右上): (400,0)
   //   2 (左下): (0,240)   3 (右下): (400,240)
-  uint16_t tile_x = DISPLAY_OFFSET_X + (tileIndex % 2) * TILE_WIDTH;   // 0+offset or 400+offset
-  uint16_t tile_y = DISPLAY_OFFSET_Y + (tileIndex / 2) * TILE_HEIGHT;  // 0+offset or 240+offset
+  uint16_t tile_x = (tileIndex % 2) * TILE_WIDTH;   // 0 or 400
+  uint16_t tile_y = (tileIndex / 2) * TILE_HEIGHT;  // 0 or 240
   
   const char* tileNames[] = {"左上", "右上", "左下", "右下"};
   Serial.println(F("========================================"));
@@ -493,60 +526,74 @@ void handleTileUpdate(uint8_t* payload, uint32_t length, uint16_t seqId) {
   Serial.print(TILE_HEIGHT);
   Serial.println(F(")"));
   
-  // 記憶體診斷和整理
-  Serial.print(F("🔍 分配前記憶體: 可用="));
+  // 檢查預先配置的緩衝區是否可用
+  if (!tileBufferAllocated || !tileBuffer) {
+    Serial.println(F("❌ 分區緩衝區未配置"));
+    sendNAK(seqId);
+    return;
+  }
+  
+  Serial.println(F("✓ 使用預先配置的分區緩衝區"));
+  Serial.print(F("🔍 當前記憶體: 可用="));
   Serial.print(ESP.getFreeHeap());
   Serial.print(F(" bytes, 最大塊="));
   Serial.print(ESP.getMaxFreeBlockSize());
   Serial.println(F(" bytes"));
   
-  // 強制垃圾收集和記憶體整理
-  yield();
-  delay(10);  // 給系統時間整理記憶體
-  
-  // 分配緩衝區
-  uint8_t* tileBuffer = (uint8_t*)malloc(TILE_BUFFER_SIZE);
-  if (!tileBuffer) {
-    Serial.print(F("❌ 無法分配分區緩衝區 ("));
-    Serial.print(TILE_BUFFER_SIZE);
-    Serial.print(F(" bytes), 最大可用塊: "));
-    Serial.print(ESP.getMaxFreeBlockSize());
-    Serial.println(F(" bytes"));
-    
-    // 顯示更詳細的記憶體資訊
-    Serial.print(F("   總可用: "));
-    Serial.print(ESP.getFreeHeap());
-    Serial.print(F(" bytes, 碎片化程度: "));
-    uint32_t freeHeap = ESP.getFreeHeap();
-    uint32_t maxBlock = ESP.getMaxFreeBlockSize();
-    Serial.print((freeHeap - maxBlock) * 100 / freeHeap);
-    Serial.println(F("%"));
-    
-    sendNAK(seqId);
-    return;
-  }
-  
-  Serial.println(F("✓ 緩衝區分配成功"));
-  
-  // 智能解壓縮
-  bool isCompressed = (length != TILE_BUFFER_SIZE);
+  // 檢查 payload 是否就是 tileBuffer（使用外部緩衝區）
+  bool isExternalBuffer = (payload == tileBuffer);
   int decompressedSize;
   
-  if (isCompressed) {
-    Serial.print(F("🗜️  解壓縮分區資料: "));
-    Serial.print(length);
-    Serial.print(F(" bytes → "));
-    unsigned long decompressStart = millis();
-    decompressedSize = RLEDecoder::decode(payload, length, tileBuffer, TILE_BUFFER_SIZE);
-    unsigned long decompressTime = millis() - decompressStart;
-    Serial.print(decompressedSize);
-    Serial.print(F(" bytes ("));
-    Serial.print(decompressTime);
-    Serial.println(F(" ms)"));
-  } else {
-    Serial.println(F("📦 直接使用未壓縮資料"));
-    memcpy(tileBuffer, payload, length);
+  if (isExternalBuffer) {
+    Serial.println(F("✓ Payload 使用外部緩衝區（零拷貝）"));
+    // payload 已經在 tileBuffer 中，無需任何操作
     decompressedSize = length;
+  } else {
+    // 舊的邏輯：需要複製或解壓縮
+    Serial.println(F("⚠️ Payload 使用內部緩衝區（需要複製）"));
+    
+    bool isCompressed = (length != TILE_BUFFER_SIZE);
+    
+    if (isCompressed) {
+      Serial.print(F("🗜️  解壓縮分區資料: "));
+      Serial.print(length);
+      Serial.print(F(" bytes → "));
+      unsigned long decompressStart = millis();
+      
+      decompressedSize = RLEDecoder::decode(payload, length, tileBuffer, TILE_BUFFER_SIZE);
+      
+      unsigned long decompressTime = millis() - decompressStart;
+      Serial.print(decompressedSize);
+      Serial.print(F(" bytes ("));
+      Serial.print(decompressTime);
+      Serial.println(F(" ms)"));
+    } else {
+      Serial.print(F("📦 複製未壓縮資料: "));
+      Serial.print(length);
+      Serial.println(F(" bytes"));
+      
+      unsigned long copyStart = millis();
+      memcpy(tileBuffer, payload, length);
+      decompressedSize = length;
+      unsigned long copyTime = millis() - copyStart;
+      
+      Serial.print(F("   複製完成 ("));
+      Serial.print(copyTime);
+      Serial.println(F(" ms)"));
+    }
+  }
+  
+  // 立即釋放 PacketReceiver（如果使用了內部緩衝區）
+  if (!isExternalBuffer) {
+    Serial.println(F("🗑️  釋放 payload 記憶體..."));
+    packetReceiver.reset();
+    yield();
+    
+    Serial.print(F("   釋放後記憶體: 可用="));
+    Serial.print(ESP.getFreeHeap());
+    Serial.print(F(" bytes, 最大塊="));
+    Serial.print(ESP.getMaxFreeBlockSize());
+    Serial.println(F(" bytes"));
   }
   
   if (decompressedSize != TILE_BUFFER_SIZE) {
@@ -562,15 +609,32 @@ void handleTileUpdate(uint8_t* payload, uint32_t length, uint16_t seqId) {
   
   // 顯示分區
   Serial.println(F("🖼️  更新分區顯示..."));
+  Serial.print(F("   setPartialWindow("));
+  Serial.print(tile_x);
+  Serial.print(F(", "));
+  Serial.print(tile_y);
+  Serial.print(F(", "));
+  Serial.print(TILE_WIDTH);
+  Serial.print(F(", "));
+  Serial.print(TILE_HEIGHT);
+  Serial.println(F(")"));
+  
   unsigned long displayStart = millis();
   
+  // 重要：必須先設置全窗口，再設置部分窗口，否則座標會錯誤
+  display.setFullWindow();
   display.setPartialWindow(tile_x, tile_y, TILE_WIDTH, TILE_HEIGHT);
   display.writeImage(tileBuffer, 0, 0, TILE_WIDTH, TILE_HEIGHT, false, false, true);
+  
+  // 注意：不釋放 tileBuffer，因為它是預先配置的全局緩衝區
+  Serial.println(F("✓ writeImage 完成（緩衝區保留供下次使用）"));
+  
+  // 執行顯示刷新（這個操作需要約 18 秒）
   display.refresh(false);  // 快速部分更新
   
   unsigned long displayTime = millis() - displayStart;
   
-  free(tileBuffer);
+  // 顯示完成後才發送 ACK
   sendACK(seqId);
   
   Serial.print(F("✅ 分區 "));
@@ -578,6 +642,17 @@ void handleTileUpdate(uint8_t* payload, uint32_t length, uint16_t seqId) {
   Serial.print(F(" 更新完成 ("));
   Serial.print(displayTime);
   Serial.println(F(" ms)"));
+  
+  // 主動觸發記憶體整理，為下一個分區做準備
+  Serial.println(F("🧹 觸發記憶體整理..."));
+  yield();
+  delay(1000);  // 給系統充足時間整理記憶體堆（增加到 1 秒）
+  
+  Serial.print(F("   整理後記憶體: 可用="));
+  Serial.print(ESP.getFreeHeap());
+  Serial.print(F(" bytes, 最大塊="));
+  Serial.print(ESP.getMaxFreeBlockSize());
+  Serial.println(F(" bytes"));
   Serial.println(F("========================================"));
 }
 
@@ -951,6 +1026,26 @@ void setup() {
   Serial.print(F("*** 分配後可用記憶體: "));
   Serial.print(ESP.getFreeHeap());
   Serial.println(F(" bytes ***"));
+  
+#if ENABLE_TILE_DISPLAY
+  // 預先配置分區顯示緩衝區
+  Serial.println(F("*** [2.5/5] 配置分區顯示緩衝區 (12KB)... ***"));
+  tileBuffer = (uint8_t*)malloc(TILE_BUFFER_SIZE);
+  
+  if (!tileBuffer) {
+    Serial.println(F("*** 警告：無法分配分區緩衝區！***"));
+    Serial.print(F("需要: "));
+    Serial.print(TILE_BUFFER_SIZE);
+    Serial.println(F(" bytes"));
+    tileBufferAllocated = false;
+  } else {
+    tileBufferAllocated = true;
+    Serial.println(F("*** ✓ 分區緩衝區配置成功！***"));
+    Serial.print(F("*** 配置後可用記憶體: "));
+    Serial.print(ESP.getFreeHeap());
+    Serial.println(F(" bytes ***"));
+  }
+#endif
   
   // *** 跳過 display.init() - 延遲到第一次顯示時再初始化 ***
   // display.init() 會消耗大量記憶體，我們在 displayFrame() 第一次呼叫時才初始化

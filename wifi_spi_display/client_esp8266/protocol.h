@@ -185,18 +185,44 @@ private:
   PacketHeader header;
   uint8_t* payload;
   size_t payloadReceived;
+  bool useExternalBuffer;  // 是否使用外部緩衝區
   
 public:
   PacketReceiver() {
     state = WAITING_HEADER;
     payload = nullptr;
     payloadReceived = 0;
+    useExternalBuffer = false;
   }
   
   ~PacketReceiver() {
-    if (payload) {
+    // 只釋放自己分配的記憶體
+    if (payload && !useExternalBuffer) {
       free(payload);
     }
+  }
+  
+  /**
+   * 設置外部緩衝區（用於避免額外記憶體分配）
+   * 
+   * @param buffer 外部緩衝區指標
+   * @param size 緩衝區大小
+   */
+  void setExternalBuffer(uint8_t* buffer, size_t size) {
+    // 釋放之前的內部緩衝區
+    if (payload && !useExternalBuffer) {
+      free(payload);
+    }
+    payload = buffer;
+    useExternalBuffer = true;
+  }
+  
+  /**
+   * 清除外部緩衝區設置
+   */
+  void clearExternalBuffer() {
+    payload = nullptr;
+    useExternalBuffer = false;
   }
   
   /**
@@ -217,31 +243,58 @@ public:
         return false;
       }
       
-      // 分配 payload 記憶體
+      // 分配 payload 記憶體（或使用外部緩衝區）
       if (header.length > 0) {
-        // 檢查記憶體是否足夠
-        uint32_t freeHeap = ESP.getFreeHeap();
-        Serial.print(F("需要分配: "));
-        Serial.print(header.length);
-        Serial.print(F(" bytes, 可用: "));
-        Serial.print(freeHeap);
-        Serial.println(F(" bytes"));
-        
-        if (freeHeap < header.length + 8000) {  // 保留 8KB 安全餘量
-          Serial.println(F("記憶體不足！"));
-          return false;
+        if (useExternalBuffer && payload) {
+          // 使用外部緩衝區，不需要分配記憶體
+          Serial.print(F("✓ 使用外部緩衝區: "));
+          Serial.print(header.length);
+          Serial.println(F(" bytes"));
+        } else {
+          // 需要動態分配記憶體
+          uint32_t freeHeap = ESP.getFreeHeap();
+          uint32_t maxBlock = ESP.getMaxFreeBlockSize();
+          Serial.print(F("需要分配: "));
+          Serial.print(header.length);
+          Serial.print(F(" bytes, 可用: "));
+          Serial.print(freeHeap);
+          Serial.print(F(" bytes, 最大塊: "));
+          Serial.print(maxBlock);
+          Serial.println(F(" bytes"));
+          
+          // 檢查最大連續塊是否足夠
+          if (maxBlock < header.length) {
+            Serial.print(F("記憶體碎片化！最大連續塊 "));
+            Serial.print(maxBlock);
+            Serial.print(F(" bytes 小於需求 "));
+            Serial.print(header.length);
+            Serial.println(F(" bytes"));
+            return false;
+          }
+          
+          // 最小安全餘量
+          if (freeHeap < header.length + 100) {
+            Serial.print(F("記憶體不足！需要 "));
+            Serial.print(header.length + 100);
+            Serial.print(F(" bytes (payload + 100B 安全餘量), 可用 "));
+            Serial.print(freeHeap);
+            Serial.println(F(" bytes"));
+            return false;
+          }
+          
+          payload = (uint8_t*)malloc(header.length);
+          if (!payload) {
+            Serial.println(F("記憶體分配失敗！"));
+            return false;
+          }
+          Serial.println(F("Payload 記憶體分配成功"));
         }
-        
-        payload = (uint8_t*)malloc(header.length);
-        if (!payload) {
-          Serial.println(F("記憶體分配失敗！"));
-          return false;
-        }
-        Serial.println(F("Payload 記憶體分配成功"));
+      } else if (!useExternalBuffer) {
+        payload = nullptr;
       }
       
       // 如果還有資料，複製到 payload
-      if (length > PROTO_HEADER_SIZE) {
+      if (header.length > 0 && length > PROTO_HEADER_SIZE) {
         size_t payloadSize = length - PROTO_HEADER_SIZE;
         if (payloadSize > header.length) {
           payloadSize = header.length;
@@ -291,8 +344,12 @@ public:
    * 重置接收器
    */
   void reset() {
-    if (payload) {
+    // 只釋放自己分配的記憶體
+    if (payload && !useExternalBuffer) {
       free(payload);
+    }
+    // 如果使用外部緩衝區，不要清空 payload 指標（讓它繼續指向外部緩衝區）
+    if (!useExternalBuffer) {
       payload = nullptr;
     }
     payloadReceived = 0;
