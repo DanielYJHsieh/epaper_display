@@ -621,16 +621,25 @@ void handleTileUpdate(uint8_t* payload, uint32_t length, uint16_t seqId) {
   
   unsigned long displayStart = millis();
   
-  // 重要：必須先設置全窗口，再設置部分窗口，否則座標會錯誤
-  display.setFullWindow();
+  // 設置部分窗口到指定的分區座標
+  // 注意：setPartialWindow 的座標是絕對螢幕座標
   display.setPartialWindow(tile_x, tile_y, TILE_WIDTH, TILE_HEIGHT);
-  display.writeImage(tileBuffer, 0, 0, TILE_WIDTH, TILE_HEIGHT, false, false, true);
+  
+  Serial.println(F("✓ setPartialWindow 完成"));
+  yield();
+  
+  // writeImage 的座標也是絕對螢幕座標（不是相對於 PartialWindow）
+  // 所以這裡要使用 tile_x, tile_y 而不是 0, 0
+  display.writeImage(tileBuffer, tile_x, tile_y, TILE_WIDTH, TILE_HEIGHT, false, false, true);
   
   // 注意：不釋放 tileBuffer，因為它是預先配置的全局緩衝區
   Serial.println(F("✓ writeImage 完成（緩衝區保留供下次使用）"));
+  yield();
   
   // 執行顯示刷新（這個操作需要約 18 秒）
+  Serial.println(F("🔄 開始 refresh..."));
   display.refresh(false);  // 快速部分更新
+  Serial.println(F("✓ refresh 完成"));
   
   unsigned long displayTime = millis() - displayStart;
   
