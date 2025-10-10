@@ -503,14 +503,16 @@ void handleTileUpdate(uint8_t* payload, uint32_t length, uint16_t seqId) {
     return;
   }
   
-  // 計算分區座標（直接使用全螢幕，不加偏移）
+  // 計算分區座標（垂直分割：從上到下 4 個 800×120 條帶）
   // 分區排列：
-  //   0 (左上): (0,0)     1 (右上): (400,0)
-  //   2 (左下): (0,240)   3 (右下): (400,240)
-  uint16_t tile_x = (tileIndex % 2) * TILE_WIDTH;   // 0 or 400
-  uint16_t tile_y = (tileIndex / 2) * TILE_HEIGHT;  // 0 or 240
+  //   0: (0,0)   Y: 0-120
+  //   1: (0,120) Y: 120-240
+  //   2: (0,240) Y: 240-360
+  //   3: (0,360) Y: 360-480
+  uint16_t tile_x = 0;                          // 所有條帶 X 都是 0
+  uint16_t tile_y = tileIndex * TILE_HEIGHT;    // Y = 0, 120, 240, 360
   
-  const char* tileNames[] = {"左上", "右上", "左下", "右下"};
+  const char* tileNames[] = {"條帶0", "條帶1", "條帶2", "條帶3"};
   Serial.println(F("========================================"));
   Serial.print(F("📍 分區更新: "));
   Serial.print(tileNames[tileIndex]);
@@ -522,7 +524,7 @@ void handleTileUpdate(uint8_t* payload, uint32_t length, uint16_t seqId) {
   Serial.print(tile_y);
   Serial.print(F("), 尺寸="));
   Serial.print(TILE_WIDTH);
-  Serial.print(F("×"));
+  Serial.print(F("x"));
   Serial.print(TILE_HEIGHT);
   Serial.println(F(")"));
   

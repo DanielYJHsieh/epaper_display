@@ -224,10 +224,10 @@ class DisplayServer:
     
     async def send_tiled_image(self, image_path: str):
         """
-        發送 800×480 圖片（分 4 個 400×240 區塊）
+        發送 800×480 圖片（垂直分割：4 個 800×120 水平條帶）
         
-        分區順序：
-            0 (左上) → 1 (右上) → 2 (左下) → 3 (右下)
+        分區順序（從上到下）：
+            0 (條帶0) → 1 (條帶1) → 2 (條帶2) → 3 (條帶3)
         
         Args:
             image_path: 圖片檔案路徑
@@ -247,23 +247,23 @@ class DisplayServer:
             processed = self.processor_800.convert_to_1bit(img, dither=True)
             logger.info(f"轉換為 1-bit: {processed.size}")
             
-            # 分割成 4 個區塊
+            # 分割成 4 個水平條帶（垂直分割）
             tiles = self.processor_800.split_image_to_tiles(processed)
-            logger.info(f"分割成 {len(tiles)} 個區塊 (400×240 each)")
+            logger.info(f"分割成 {len(tiles)} 個條帶 (800x120 each, 垂直分割)")
             
-            tile_names = ["左上", "右上", "左下", "右下"]
+            tile_names = ["條帶0", "條帶1", "條帶2", "條帶3"]
             total_compressed = 0
             total_raw = 0
             
-            # 依序發送 4 個區塊
+            # 依序發送 4 個條帶（從上到下）
             for tile_index in range(4):
-                logger.info(f"\n--- 處理分區 {tile_index} ({tile_names[tile_index]}) ---")
+                logger.info(f"\n--- 處理條帶 {tile_index} ({tile_names[tile_index]}) ---")
                 
                 tile_image = tiles[tile_index]
                 
-                # 處理區塊（轉換為 bytes）
+                # 處理條帶（轉換為 bytes）
                 tile_data = self.processor_800.process_tile(tile_image, dither=True)
-                logger.info(f"區塊資料: {len(tile_data)} bytes")
+                logger.info(f"條帶資料: {len(tile_data)} bytes (800x120)")
                 total_raw += len(tile_data)
                 
                 # **不使用壓縮**，直接發送未壓縮資料以避免 ESP8266 記憶體碎片化問題
@@ -279,28 +279,28 @@ class DisplayServer:
                 logger.info(f"封包大小: {len(packet)} bytes (含標頭)")
                 
                 # 發送到所有客戶端
-                logger.info(f"發送分區 {tile_index} 到 {len(self.clients)} 個客戶端...")
+                logger.info(f"發送條帶 {tile_index} 到 {len(self.clients)} 個客戶端...")
                 await asyncio.gather(
                     *[client.send(packet) for client in self.clients],
                     return_exceptions=True
                 )
-                logger.info(f"✓ 分區 {tile_index} ({tile_names[tile_index]}) 發送完成")
+                logger.info(f"✓ 條帶 {tile_index} ({tile_names[tile_index]}) 發送完成")
                 
                 # ESP8266 會在顯示完成後才發送 ACK
                 # 等待足夠時間確保 ESP8266 完成 refresh (約18秒) 並釋放記憶體
-                logger.info(f"等待分區 {tile_index} 顯示完成...")
-                await asyncio.sleep(10)  # 等待 20 秒確保 refresh 完成並釋放記憶體
+                logger.info(f"等待條帶 {tile_index} 顯示完成...")
+                await asyncio.sleep(10)  # 等待 10 秒確保 refresh 完成並釋放記憶體
             
             # 統計資訊
             overall_ratio = self.compressor.compress_ratio(total_raw, total_compressed)
-            logger.info(f"\n=== 分區傳輸完成 ===")
+            logger.info(f"\n=== 條帶傳輸完成 ===")
             logger.info(f"總原始資料: {total_raw} bytes")
             logger.info(f"總壓縮資料: {total_compressed} bytes")
             logger.info(f"整體壓縮率: {overall_ratio:.1f}%")
-            logger.info(f"4 個區塊全部發送完成")
+            logger.info(f"4 個條帶全部發送完成 (800x120 垂直分割)")
             
         except Exception as e:
-            logger.error(f"發送分區圖片失敗: {e}")
+            logger.error(f"發送條帶圖片失敗: {e}")
     
     async def send_command(self, command: Command, param: int = 0):
         """

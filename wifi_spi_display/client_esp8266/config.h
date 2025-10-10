@@ -33,16 +33,17 @@
 
 // ============================================
 // 分區顯示設定（800×480 全螢幕使用）
+// 垂直分割：4 個 800×120 水平條帶
 // ============================================
 #define ENABLE_TILE_DISPLAY 1        // 啟用分區顯示（0=關閉, 1=開啟）
-#define TILE_WIDTH 400               // 分區寬度
-#define TILE_HEIGHT 240              // 分區高度
+#define TILE_WIDTH 800               // 分區寬度（全螢幕寬度）
+#define TILE_HEIGHT 120              // 分區高度（480÷4=120）
 #define TILE_BUFFER_SIZE (TILE_WIDTH * TILE_HEIGHT / 8)  // 12000 bytes (12KB) per tile
 
 // ============================================
 // 記憶體優化設定
 // ============================================
-// 400x240 只需 12KB 緩衝區，ESP8266 可以輕鬆處理，不需要分塊！
+// 800x120 = 12KB 緩衝區，與原本 400x240 相同大小，ESP8266 可以輕鬆處理！
 #define ENABLE_CHUNKED_DISPLAY 0     // 啟用分塊顯示（0=關閉, 1=開啟）
 #define CHUNK_HEIGHT 60              // 每塊高度（行數）- 分塊模式時使用
 #define CHUNK_BUFFER_SIZE (DISPLAY_WIDTH * CHUNK_HEIGHT / 8)  // 3000 bytes per chunk

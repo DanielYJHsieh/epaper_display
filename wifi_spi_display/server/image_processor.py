@@ -177,57 +177,57 @@ class ImageProcessor:
     
     def split_image_to_tiles(self, image: Image.Image) -> dict:
         """
-        將 800×480 圖片分割成 4 個 400×240 區塊
+        將 800x480 圖片分割成 4 個 800x120 水平條帶（垂直分割）
         
-        分區排列：
-            0 (左上): (0,0) - (400,240)
-            1 (右上): (400,0) - (800,240)
-            2 (左下): (0,240) - (400,480)
-            3 (右下): (400,240) - (800,480)
+        分區排列（從上到下）：
+            0: (0,0) - (800,120)   Y: 0-120
+            1: (0,120) - (800,240) Y: 120-240
+            2: (0,240) - (800,360) Y: 240-360
+            3: (0,360) - (800,480) Y: 360-480
         
         Args:
-            image: 800×480 圖片
+            image: 800x480 圖片
             
         Returns:
-            {0: tile_left_top, 1: tile_right_top, 2: tile_left_bottom, 3: tile_right_bottom}
+            {0: band_0, 1: band_1, 2: band_2, 3: band_3}
         """
-        # 確保圖片是 800×480
+        # 確保圖片是 800x480
         if image.size != (800, 480):
-            print(f"圖片尺寸不是 800×480，進行縮放: {image.size} -> (800, 480)")
+            print(f"圖片尺寸不是 800x480，進行縮放: {image.size} -> (800, 480)")
             image = image.resize((800, 480), Image.Resampling.LANCZOS)
         
         tiles = {}
         
-        # 分割 4 個區塊
-        # 左上 (0, 0, 400, 240)
-        tiles[0] = image.crop((0, 0, 400, 240))
+        # 分割 4 個水平條帶（從上到下）
+        # 條帶 0: (0, 0, 800, 120)
+        tiles[0] = image.crop((0, 0, 800, 120))
         
-        # 右上 (400, 0, 800, 240)
-        tiles[1] = image.crop((400, 0, 800, 240))
+        # 條帶 1: (0, 120, 800, 240)
+        tiles[1] = image.crop((0, 120, 800, 240))
         
-        # 左下 (0, 240, 400, 480)
-        tiles[2] = image.crop((0, 240, 400, 480))
+        # 條帶 2: (0, 240, 800, 360)
+        tiles[2] = image.crop((0, 240, 800, 360))
         
-        # 右下 (400, 240, 800, 480)
-        tiles[3] = image.crop((400, 240, 800, 480))
+        # 條帶 3: (0, 360, 800, 480)
+        tiles[3] = image.crop((0, 360, 800, 480))
         
         return tiles
     
     def process_tile(self, tile: Image.Image, dither: bool = True) -> bytes:
         """
-        處理單個 400×240 區塊
+        處理單個 800x120 條帶
         
         Args:
-            tile: 400×240 區塊圖片
+            tile: 800x120 條帶圖片
             dither: 是否使用抖動演算法
             
         Returns:
-            12000 bytes 的 1-bit 資料
+            12000 bytes 的 1-bit 資料 (800x120/8 = 12000)
         """
         # 確保尺寸正確
-        if tile.size != (400, 240):
-            print(f"區塊尺寸不正確，進行縮放: {tile.size} -> (400, 240)")
-            tile = tile.resize((400, 240), Image.Resampling.LANCZOS)
+        if tile.size != (800, 120):
+            print(f"條帶尺寸不正確，進行縮放: {tile.size} -> (800, 120)")
+            tile = tile.resize((800, 120), Image.Resampling.LANCZOS)
         
         # 轉換為 1-bit 黑白
         if tile.mode != '1':

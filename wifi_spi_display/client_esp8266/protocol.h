@@ -26,12 +26,12 @@
 #define PROTO_TYPE_NAK 0x11      // 否認（錯誤）
 
 // ============================================
-// 分區索引定義
+// 分區索引定義（垂直分割：從上到下 4 個 800×120 條帶）
 // ============================================
-#define TILE_INDEX_LEFT_TOP     0  // 左上區域
-#define TILE_INDEX_RIGHT_TOP    1  // 右上區域
-#define TILE_INDEX_LEFT_BOTTOM  2  // 左下區域
-#define TILE_INDEX_RIGHT_BOTTOM 3  // 右下區域
+#define TILE_INDEX_BAND_0       0  // 第 0 條帶（Y: 0-120）
+#define TILE_INDEX_BAND_1       1  // 第 1 條帶（Y: 120-240）
+#define TILE_INDEX_BAND_2       2  // 第 2 條帶（Y: 240-360）
+#define TILE_INDEX_BAND_3       3  // 第 3 條帶（Y: 360-480）
 #define TILE_COUNT              4  // 總區域數
 
 // ============================================
