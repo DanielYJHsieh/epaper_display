@@ -32,7 +32,7 @@ PacketReceiver packetReceiver;
 
 // 分區顯示專用緩衝區（預先配置）
 #if ENABLE_TILE_DISPLAY
-uint8_t* tileBuffer = nullptr;     // 分區緩衝 (12KB)
+uint8_t* tileBuffer = nullptr;     // 分區緩衝 (16KB)
 bool tileBufferAllocated = false;
 #endif
 
@@ -503,16 +503,15 @@ void handleTileUpdate(uint8_t* payload, uint32_t length, uint16_t seqId) {
     return;
   }
   
-  // 計算分區座標（垂直分割：從上到下 4 個 800×120 條帶）
-  // 分區排列：
-  //   0: (0,0)   Y: 0-120
-  //   1: (0,120) Y: 120-240
-  //   2: (0,240) Y: 240-360
-  //   3: (0,360) Y: 360-480
+  // 計算分區座標（垂直分割：從上到下 3 個 800×160 條帶）
+  // 分區排列（上、中、下，完整覆蓋 800×480 螢幕）：
+  //   0: (0,0)   Y: 0-160   (上)
+  //   1: (0,160) Y: 160-320 (中)
+  //   2: (0,320) Y: 320-480 (下)
   uint16_t tile_x = 0;                          // 所有條帶 X 都是 0
-  uint16_t tile_y = tileIndex * TILE_HEIGHT;    // Y = 0, 120, 240, 360
+  uint16_t tile_y = tileIndex * TILE_HEIGHT;    // Y = 0, 160, 320
   
-  const char* tileNames[] = {"條帶0", "條帶1", "條帶2", "條帶3"};
+  const char* tileNames[] = {"條帶0", "條帶1", "條帶2"};
   Serial.println(F("========================================"));
   Serial.print(F("📍 分區更新: "));
   Serial.print(tileNames[tileIndex]);
@@ -609,7 +608,28 @@ void handleTileUpdate(uint8_t* payload, uint32_t length, uint16_t seqId) {
     return;
   }
   
-  // 顯示分區
+  #if PACKET_SIZE_TEST_MODE
+  // 測試模式：接收但不顯示
+  Serial.println(F("🧪 測試模式：跳過顯示"));
+  Serial.print(F("✓ 成功接收 "));
+  Serial.print(decompressedSize);
+  Serial.print(F(" bytes ("));
+  Serial.print(TILE_WIDTH);
+  Serial.print(F("x"));
+  Serial.print(TILE_HEIGHT);
+  Serial.println(F(")"));
+  Serial.print(F("   記憶體: 可用="));
+  Serial.print(ESP.getFreeHeap());
+  Serial.print(F(" bytes, 最大塊="));
+  Serial.print(ESP.getMaxFreeBlockSize());
+  Serial.println(F(" bytes"));
+  
+  // 直接發送 ACK
+  sendACK(seqId);
+  Serial.println(F("========================================\n"));
+  
+  #else
+  // 正常模式：顯示分區
   Serial.println(F("🖼️  更新分區顯示..."));
   Serial.print(F("   setPartialWindow("));
   Serial.print(tile_x);
@@ -653,6 +673,7 @@ void handleTileUpdate(uint8_t* payload, uint32_t length, uint16_t seqId) {
   Serial.print(F(" 更新完成 ("));
   Serial.print(displayTime);
   Serial.println(F(" ms)"));
+  #endif  // PACKET_SIZE_TEST_MODE
   
   // 主動觸發記憶體整理，為下一個分區做準備
   Serial.println(F("🧹 觸發記憶體整理..."));
@@ -1039,8 +1060,10 @@ void setup() {
   Serial.println(F(" bytes ***"));
   
 #if ENABLE_TILE_DISPLAY
-  // 預先配置分區顯示緩衝區
-  Serial.println(F("*** [2.5/5] 配置分區顯示緩衝區 (12KB)... ***"));
+  // 預先配置分區顯示緩衝區（3 個 800×160 條帶）
+  Serial.print(F("*** [2.5/5] 配置分區顯示緩衝區 ("));
+  Serial.print(TILE_BUFFER_SIZE);
+  Serial.println(F(" bytes = 16KB)... ***"));
   tileBuffer = (uint8_t*)malloc(TILE_BUFFER_SIZE);
   
   if (!tileBuffer) {

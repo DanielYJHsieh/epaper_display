@@ -33,17 +33,18 @@
 
 // ============================================
 // 分區顯示設定（800×480 全螢幕使用）
-// 垂直分割：4 個 800×120 水平條帶
+// 垂直分割：3 個 800×160 水平條帶（上、中、下）
+// 測試確認：16KB 封包穩定，21KB 以下都可用
 // ============================================
 #define ENABLE_TILE_DISPLAY 1        // 啟用分區顯示（0=關閉, 1=開啟）
 #define TILE_WIDTH 800               // 分區寬度（全螢幕寬度）
-#define TILE_HEIGHT 120              // 分區高度（480÷4=120）
-#define TILE_BUFFER_SIZE (TILE_WIDTH * TILE_HEIGHT / 8)  // 12000 bytes (12KB) per tile
+#define TILE_HEIGHT 160              // 分區高度（480÷3=160）
+#define TILE_BUFFER_SIZE (TILE_WIDTH * TILE_HEIGHT / 8)  // 16000 bytes (16KB) per tile
 
 // ============================================
 // 記憶體優化設定
 // ============================================
-// 800x120 = 12KB 緩衝區，與原本 400x240 相同大小，ESP8266 可以輕鬆處理！
+// 3×16KB 配置，完整覆蓋 800×480 螢幕
 #define ENABLE_CHUNKED_DISPLAY 0     // 啟用分塊顯示（0=關閉, 1=開啟）
 #define CHUNK_HEIGHT 60              // 每塊高度（行數）- 分塊模式時使用
 #define CHUNK_BUFFER_SIZE (DISPLAY_WIDTH * CHUNK_HEIGHT / 8)  // 3000 bytes per chunk
@@ -68,6 +69,7 @@
 // ============================================
 #define DEBUG_SERIAL 1               // 啟用序列埠除錯（0=關閉, 1=開啟）
 #define SERIAL_BAUD 115200          // 序列埠速率
+#define PACKET_SIZE_TEST_MODE 0      // 封包大小測試模式（0=正常顯示，1=只接收不顯示）
 
 // ============================================
 // WiFi 優化設定

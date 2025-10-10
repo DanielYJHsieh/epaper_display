@@ -177,19 +177,19 @@ class ImageProcessor:
     
     def split_image_to_tiles(self, image: Image.Image) -> dict:
         """
-        將 800x480 圖片分割成 4 個 800x120 水平條帶（垂直分割）
+        將 800x480 圖片分割成 3 個 800x160 水平條帶（垂直分割）
+        上、中、下三個區塊，完整覆蓋螢幕
         
         分區排列（從上到下）：
-            0: (0,0) - (800,120)   Y: 0-120
-            1: (0,120) - (800,240) Y: 120-240
-            2: (0,240) - (800,360) Y: 240-360
-            3: (0,360) - (800,480) Y: 360-480
+            0: (0,0) - (800,160)   Y: 0-160   (上)
+            1: (0,160) - (800,320) Y: 160-320 (中)
+            2: (0,320) - (800,480) Y: 320-480 (下)
         
         Args:
             image: 800x480 圖片
             
         Returns:
-            {0: band_0, 1: band_1, 2: band_2, 3: band_3}
+            {0: band_0, 1: band_1, 2: band_2}
         """
         # 確保圖片是 800x480
         if image.size != (800, 480):
@@ -198,36 +198,33 @@ class ImageProcessor:
         
         tiles = {}
         
-        # 分割 4 個水平條帶（從上到下）
-        # 條帶 0: (0, 0, 800, 120)
-        tiles[0] = image.crop((0, 0, 800, 120))
+        # 分割 3 個水平條帶（從上到下）
+        # 條帶 0: (0, 0, 800, 160) - 上
+        tiles[0] = image.crop((0, 0, 800, 160))
         
-        # 條帶 1: (0, 120, 800, 240)
-        tiles[1] = image.crop((0, 120, 800, 240))
+        # 條帶 1: (0, 160, 800, 320) - 中
+        tiles[1] = image.crop((0, 160, 800, 320))
         
-        # 條帶 2: (0, 240, 800, 360)
-        tiles[2] = image.crop((0, 240, 800, 360))
-        
-        # 條帶 3: (0, 360, 800, 480)
-        tiles[3] = image.crop((0, 360, 800, 480))
+        # 條帶 2: (0, 320, 800, 480) - 下
+        tiles[2] = image.crop((0, 320, 800, 480))
         
         return tiles
     
     def process_tile(self, tile: Image.Image, dither: bool = True) -> bytes:
         """
-        處理單個 800x120 條帶
+        處理單個 800x160 條帶
         
         Args:
-            tile: 800x120 條帶圖片
+            tile: 800x160 條帶圖片
             dither: 是否使用抖動演算法
             
         Returns:
-            12000 bytes 的 1-bit 資料 (800x120/8 = 12000)
+            16000 bytes 的 1-bit 資料 (800x160/8 = 16000)
         """
         # 確保尺寸正確
-        if tile.size != (800, 120):
-            print(f"條帶尺寸不正確，進行縮放: {tile.size} -> (800, 120)")
-            tile = tile.resize((800, 120), Image.Resampling.LANCZOS)
+        if tile.size != (800, 160):
+            print(f"條帶尺寸不正確，進行縮放: {tile.size} -> (800, 160)")
+            tile = tile.resize((800, 160), Image.Resampling.LANCZOS)
         
         # 轉換為 1-bit 黑白
         if tile.mode != '1':

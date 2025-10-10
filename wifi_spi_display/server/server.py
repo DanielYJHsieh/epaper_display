@@ -224,10 +224,10 @@ class DisplayServer:
     
     async def send_tiled_image(self, image_path: str):
         """
-        發送 800×480 圖片（垂直分割：4 個 800×120 水平條帶）
+        發送 800×480 圖片（垂直分割：3 個 800×160 水平條帶）
         
         分區順序（從上到下）：
-            0 (條帶0) → 1 (條帶1) → 2 (條帶2) → 3 (條帶3)
+            0 (條帶0) → 1 (條帶1) → 2 (條帶2)
         
         Args:
             image_path: 圖片檔案路徑
@@ -247,23 +247,23 @@ class DisplayServer:
             processed = self.processor_800.convert_to_1bit(img, dither=True)
             logger.info(f"轉換為 1-bit: {processed.size}")
             
-            # 分割成 4 個水平條帶（垂直分割）
+            # 分割成 3 個水平條帶（垂直分割：上、中、下）
             tiles = self.processor_800.split_image_to_tiles(processed)
-            logger.info(f"分割成 {len(tiles)} 個條帶 (800x120 each, 垂直分割)")
+            logger.info(f"分割成 {len(tiles)} 個條帶 (800x160 each, 垂直分割)")
             
-            tile_names = ["條帶0", "條帶1", "條帶2", "條帶3"]
+            tile_names = ["條帶0 (上)", "條帶1 (中)", "條帶2 (下)"]
             total_compressed = 0
             total_raw = 0
             
-            # 依序發送 4 個條帶（從上到下）
-            for tile_index in range(4):
+            # 依序發送 3 個條帶（從上到下）
+            for tile_index in range(3):
                 logger.info(f"\n--- 處理條帶 {tile_index} ({tile_names[tile_index]}) ---")
                 
                 tile_image = tiles[tile_index]
                 
                 # 處理條帶（轉換為 bytes）
                 tile_data = self.processor_800.process_tile(tile_image, dither=True)
-                logger.info(f"條帶資料: {len(tile_data)} bytes (800x120)")
+                logger.info(f"條帶資料: {len(tile_data)} bytes (800x160)")
                 total_raw += len(tile_data)
                 
                 # **不使用壓縮**，直接發送未壓縮資料以避免 ESP8266 記憶體碎片化問題
@@ -297,7 +297,7 @@ class DisplayServer:
             logger.info(f"總原始資料: {total_raw} bytes")
             logger.info(f"總壓縮資料: {total_compressed} bytes")
             logger.info(f"整體壓縮率: {overall_ratio:.1f}%")
-            logger.info(f"4 個條帶全部發送完成 (800x120 垂直分割)")
+            logger.info(f"3 個條帶全部發送完成 (800x160 垂直分割，完整覆蓋 800x480)")
             
         except Exception as e:
             logger.error(f"發送條帶圖片失敗: {e}")
