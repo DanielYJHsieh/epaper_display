@@ -639,15 +639,34 @@ class DisplayServer:
             drawCrop();
         }
         
-        // 重設選區
+        // 重設選區（保持原始比例，不拉伸）
         function resetCrop() {
-            cropRect = {
-                x: 0,
-                y: 0,
-                width: sourceImage.width,
-                height: sourceImage.height
-            };
+            if (!sourceImage) return;
+            
+            const displayRatio = getDisplayRatio();
+            const imgRatio = sourceImage.width / sourceImage.height;
+            
+            // 計算在不拉伸的情況下，圖片應該佔據的區域
+            if (imgRatio > displayRatio) {
+                // 圖片更寬，以寬度為準
+                cropRect = {
+                    x: 0,
+                    y: 0,
+                    width: sourceImage.width,
+                    height: sourceImage.width / displayRatio
+                };
+            } else {
+                // 圖片更高或比例相同，以高度為準
+                cropRect = {
+                    x: 0,
+                    y: 0,
+                    width: sourceImage.height * displayRatio,
+                    height: sourceImage.height
+                };
+            }
+            
             drawCrop();
+            showAlert('✅ 已重設選區（保持比例）', 'success');
         }
         
         // 繪製裁切預覽
@@ -818,26 +837,80 @@ class DisplayServer:
                     
                     const cropCtx = cropCanvas.getContext('2d');
                     
+                    // 填充白色背景
+                    cropCtx.fillStyle = 'white';
+                    cropCtx.fillRect(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+                    
+                    // 計算裁切區域的比例（注意：旋轉後 width 和 height 對調）
+                    const cropRatio = cropRect.height / cropRect.width;  // 旋轉後的比例
+                    const displayRatio = DISPLAY_WIDTH / DISPLAY_HEIGHT;  // 800/480
+                    
+                    let drawWidth, drawHeight;
+                    
+                    if (Math.abs(cropRatio - displayRatio) < 0.01) {
+                        // 比例相同，直接繪製填滿
+                        drawWidth = DISPLAY_HEIGHT;  // 旋轉前的寬
+                        drawHeight = DISPLAY_WIDTH;  // 旋轉前的高
+                    } else if (cropRatio > displayRatio) {
+                        // 旋轉後更寬，以寬度為準
+                        drawWidth = DISPLAY_HEIGHT;
+                        drawHeight = DISPLAY_HEIGHT / cropRatio;
+                    } else {
+                        // 旋轉後更高，以高度為準
+                        drawHeight = DISPLAY_WIDTH;
+                        drawWidth = DISPLAY_WIDTH * cropRatio;
+                    }
+                    
                     // 移動到中心點並旋轉 90 度（順時針）
                     cropCtx.translate(DISPLAY_WIDTH / 2, DISPLAY_HEIGHT / 2);
                     cropCtx.rotate(90 * Math.PI / 180);
                     
-                    // 繪製裁切區域（旋轉後）
+                    // 繪製裁切區域（居中，旋轉後）
                     cropCtx.drawImage(
                         sourceImage,
                         cropRect.x, cropRect.y, cropRect.width, cropRect.height,
-                        -DISPLAY_HEIGHT / 2, -DISPLAY_WIDTH / 2, DISPLAY_HEIGHT, DISPLAY_WIDTH
+                        -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight
                     );
                 } else {
-                    // 橫向模式：直接繪製
+                    // 橫向模式：保持比例繪製，空白處填充白色
                     cropCanvas.width = size.width;
                     cropCanvas.height = size.height;
                     const cropCtx = cropCanvas.getContext('2d');
                     
+                    // 填充白色背景
+                    cropCtx.fillStyle = 'white';
+                    cropCtx.fillRect(0, 0, size.width, size.height);
+                    
+                    // 計算裁切區域的比例
+                    const cropRatio = cropRect.width / cropRect.height;
+                    const displayRatio = size.width / size.height;
+                    
+                    let drawWidth, drawHeight, drawX, drawY;
+                    
+                    if (Math.abs(cropRatio - displayRatio) < 0.01) {
+                        // 比例相同，直接繪製填滿
+                        drawWidth = size.width;
+                        drawHeight = size.height;
+                        drawX = 0;
+                        drawY = 0;
+                    } else if (cropRatio > displayRatio) {
+                        // 裁切區域更寬，以寬度為準，上下留白
+                        drawWidth = size.width;
+                        drawHeight = size.width / cropRatio;
+                        drawX = 0;
+                        drawY = (size.height - drawHeight) / 2;
+                    } else {
+                        // 裁切區域更高，以高度為準，左右留白
+                        drawHeight = size.height;
+                        drawWidth = size.height * cropRatio;
+                        drawX = (size.width - drawWidth) / 2;
+                        drawY = 0;
+                    }
+                    
                     cropCtx.drawImage(
                         sourceImage,
                         cropRect.x, cropRect.y, cropRect.width, cropRect.height,
-                        0, 0, size.width, size.height
+                        drawX, drawY, drawWidth, drawHeight
                     );
                 }
                 
