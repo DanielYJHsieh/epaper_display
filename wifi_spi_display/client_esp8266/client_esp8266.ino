@@ -678,13 +678,17 @@ void handleTileUpdate(uint8_t* payload, uint32_t length, uint16_t seqId) {
   // 主動觸發記憶體整理，為下一個分區做準備
   Serial.println(F("🧹 觸發記憶體整理..."));
   yield();
-  delay(1000);  // 給系統充足時間整理記憶體堆（增加到 1 秒）
+  delay(100);  // 給系統短暫時間整理記憶體（優化：從 1000ms → 100ms）
   
   Serial.print(F("   整理後記憶體: 可用="));
   Serial.print(ESP.getFreeHeap());
   Serial.print(F(" bytes, 最大塊="));
   Serial.print(ESP.getMaxFreeBlockSize());
   Serial.println(F(" bytes"));
+  
+  // 發送 READY 訊息給 Server，表示可以接收下一個分區
+  Serial.println(F("📤 發送 READY 訊息給 Server..."));
+  webSocket.sendTXT("READY");
   Serial.println(F("========================================"));
 }
 

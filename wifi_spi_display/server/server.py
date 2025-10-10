@@ -47,6 +47,9 @@ class DisplayServer:
         self.compressor = RLECompressor()
         self.hybrid = HybridCompressor()
         
+        # 條帶顯示完成事件（用於同步）
+        self.tile_ready_event = asyncio.Event()
+        
         logger.info(f"伺服器初始化完成")
         logger.info(f"顯示器: 400x240 (中央區域) / 800x480 (全螢幕分區)")
     
@@ -92,7 +95,13 @@ class DisplayServer:
                         logger.warning(f"✗ ESP8266 回報錯誤 SeqID={info['seq_id']}")
         else:
             # 文字訊息
-            logger.info(f"收到文字訊息: {message}")
+            message_str = message.strip()
+            logger.info(f"收到文字訊息: {message_str}")
+            
+            # 處理 READY 訊號（ESP8266 完成顯示並準備接收下一個條帶）
+            if message_str == "READY":
+                logger.info("✓ ESP8266 已準備好接收下一個條帶")
+                self.tile_ready_event.set()  # 設置事件，通知可以發送下一個條帶
     
     async def send_image(self, image_path: str):
         """
@@ -286,10 +295,26 @@ class DisplayServer:
                 )
                 logger.info(f"✓ 條帶 {tile_index} ({tile_names[tile_index]}) 發送完成")
                 
-                # ESP8266 會在顯示完成後才發送 ACK
-                # 等待足夠時間確保 ESP8266 完成 refresh (約18秒) 並釋放記憶體
-                logger.info(f"等待條帶 {tile_index} 顯示完成...")
-                await asyncio.sleep(10)  # 等待 10 秒確保 refresh 完成並釋放記憶體
+                # 等待 ESP8266 完成顯示並發送 READY 訊號
+                if tile_index < 2:  # 最後一個條帶不需要等待
+                    logger.info(f"等待條帶 {tile_index} 顯示完成...")
+                    self.tile_ready_event.clear()  # 清除事件標誌
+                    
+                    try:
+                        # 等待 READY 訊號，最長 30 秒超時
+                        await asyncio.wait_for(self.tile_ready_event.wait(), timeout=30.0)
+                        logger.info(f"✓ 條帶 {tile_index} 顯示完成，準備發送下一個條帶")
+                    except asyncio.TimeoutError:
+                        logger.warning(f"⚠️ 等待條帶 {tile_index} 完成超時，繼續發送下一個條帶")
+                else:
+                    # 最後一個條帶，等待 READY 訊號確保完成
+                    logger.info(f"等待最後一個條帶完成...")
+                    self.tile_ready_event.clear()
+                    try:
+                        await asyncio.wait_for(self.tile_ready_event.wait(), timeout=30.0)
+                        logger.info(f"✓ 最後一個條帶顯示完成")
+                    except asyncio.TimeoutError:
+                        logger.warning(f"⚠️ 等待最後一個條帶超時")
             
             # 統計資訊
             overall_ratio = self.compressor.compress_ratio(total_raw, total_compressed)
