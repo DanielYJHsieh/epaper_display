@@ -224,6 +224,39 @@ class DisplayServer:
             box-shadow: 0 4px 12px rgba(0,0,0,0.1);
         }
         
+        .crop-container {
+            position: relative;
+            display: none;
+            max-width: 100%;
+            margin: 20px 0;
+            text-align: center;
+        }
+        
+        .crop-container canvas {
+            max-width: 100%;
+            height: auto;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            cursor: crosshair;
+        }
+        
+        .crop-info {
+            margin-top: 10px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .crop-controls {
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        
         .btn {
             display: inline-block;
             padding: 15px 30px;
@@ -401,10 +434,26 @@ class DisplayServer:
                 <h2>📸 選擇圖片</h2>
                 <div class="upload-area" onclick="document.getElementById('imageFile').click()">
                     <div class="upload-icon">📁</div>
-                    <p style="color: #667eea; font-weight: 600; margin-bottom: 5px;">點擊選擇圖片</p>
-                    <p style="color: #999; font-size: 14px;">支援 JPG, PNG, BMP 等格式</p>
+                    <p style="color: #667eea; font-weight: 600; margin-bottom: 5px;">點擊選擇圖片 或 按 Ctrl+V 貼上</p>
+                    <p style="color: #999; font-size: 14px;">支援 JPG, PNG, BMP 等格式 | 支援剪貼簿貼上</p>
                     <input type="file" id="imageFile" accept="image/*">
                 </div>
+                
+                <!-- 裁切預覽區 -->
+                <div class="crop-container" id="cropContainer">
+                    <canvas id="cropCanvas"></canvas>
+                    <div class="crop-info" id="cropInfo">
+                        🔲 拖動滑鼠選擇顯示區域 (800×480) | 按住 Shift 可從中心拖動
+                    </div>
+                    <div class="crop-controls">
+                        <button class="btn btn-secondary" onclick="resetCrop()">🔄 重設選區</button>
+                        <button class="btn btn-secondary" onclick="fitCrop()">📐 自動適配</button>
+                        <button class="btn btn-secondary" onclick="toggleOrientation()" id="orientationBtn">
+                            🔄 切換方向 (橫向)
+                        </button>
+                    </div>
+                </div>
+                
                 <img id="preview" alt="圖片預覽">
             </div>
             
@@ -441,47 +490,364 @@ class DisplayServer:
     
     <script>
         let selectedFile = null;
+        let sourceImage = null;
+        let cropRect = null;
+        let isDragging = false;
+        let dragStart = null;
+        let canvas = null;
+        let ctx = null;
+        let isLandscape = true; // true=橫向(800x480), false=直向(480x800)
+        const DISPLAY_WIDTH = 800;
+        const DISPLAY_HEIGHT = 480;
         
-        // 載入本機 IP
-        fetch('/status')
-            .then(res => res.json())
-            .then(data => {
-                if (data.local_ip) {
-                    document.getElementById('localIP').textContent = data.local_ip;
-                }
-            });
-        
-        // 圖片選擇
-        document.getElementById('imageFile').onchange = function(e) {
-            const file = e.target.files[0];
-            if (!file) return;
+        // 初始化 canvas
+        window.addEventListener('load', function() {
+            canvas = document.getElementById('cropCanvas');
+            ctx = canvas.getContext('2d');
             
+            // Canvas 事件
+            canvas.addEventListener('mousedown', onMouseDown);
+            canvas.addEventListener('mousemove', onMouseMove);
+            canvas.addEventListener('mouseup', onMouseUp);
+            canvas.addEventListener('mouseleave', onMouseUp);
+            
+            // 圖片選擇事件
+            document.getElementById('imageFile').onchange = function(e) {
+                const file = e.target.files[0];
+                if (!file) return;
+                loadImage(file);
+            };
+            
+            // 載入本機 IP
+            fetch('/status')
+                .then(res => res.json())
+                .then(data => {
+                    if (data.local_ip) {
+                        document.getElementById('localIP').textContent = data.local_ip;
+                    }
+                });
+            
+            showAlert('💡 提示：可使用 Ctrl+V 直接貼上剪貼簿中的圖片', 'info');
+            setTimeout(() => {
+                document.getElementById('alert').style.display = 'none';
+            }, 5000);
+        });
+        
+        // 載入圖片
+        function loadImage(file) {
             selectedFile = file;
             const reader = new FileReader();
             reader.onload = function(event) {
-                const img = document.getElementById('preview');
+                const img = new Image();
+                img.onload = function() {
+                    sourceImage = img;
+                    setupCropCanvas();
+                    document.getElementById('sendBtn').disabled = false;
+                };
                 img.src = event.target.result;
-                img.style.display = 'block';
-                document.getElementById('sendBtn').disabled = false;
             };
             reader.readAsDataURL(file);
-        };
+        }
+        
+        // 設置裁切 canvas
+        function setupCropCanvas() {
+            if (!sourceImage) return;
+            
+            // 隱藏預覽，顯示裁切界面
+            document.getElementById('preview').style.display = 'none';
+            document.getElementById('cropContainer').style.display = 'block';
+            
+            // 計算顯示尺寸（最大寬度 700px）
+            const maxWidth = 700;
+            let displayWidth = sourceImage.width;
+            let displayHeight = sourceImage.height;
+            
+            if (displayWidth > maxWidth) {
+                const scale = maxWidth / displayWidth;
+                displayWidth = maxWidth;
+                displayHeight = sourceImage.height * scale;
+            }
+            
+            canvas.width = displayWidth;
+            canvas.height = displayHeight;
+            
+            // 自動適配裁切區域
+            fitCrop();
+        }
+        
+        // 取得當前顯示比例
+        function getDisplayRatio() {
+            return isLandscape ? (DISPLAY_WIDTH / DISPLAY_HEIGHT) : (DISPLAY_HEIGHT / DISPLAY_WIDTH);
+        }
+        
+        // 取得當前顯示尺寸
+        function getDisplaySize() {
+            return isLandscape ? 
+                { width: DISPLAY_WIDTH, height: DISPLAY_HEIGHT } : 
+                { width: DISPLAY_HEIGHT, height: DISPLAY_WIDTH };
+        }
+        
+        // 切換橫向/直向
+        function toggleOrientation() {
+            isLandscape = !isLandscape;
+            
+            // 更新按鈕文字
+            const btn = document.getElementById('orientationBtn');
+            btn.innerHTML = isLandscape ? '🔄 切換方向 (橫向)' : '🔄 切換方向 (直向)';
+            
+            // 重新適配裁切區域
+            fitCrop();
+            
+            showAlert(isLandscape ? '📺 已切換至橫向模式 (800×480)' : '📱 已切換至直向模式 (480×800)', 'success');
+        }
+        
+        // 自動適配裁切區域
+        function fitCrop() {
+            if (!sourceImage) return;
+            
+            const displayRatio = getDisplayRatio();
+            const imgRatio = sourceImage.width / sourceImage.height;
+            
+            if (imgRatio > displayRatio) {
+                // 圖片更寬，以高度為準
+                const cropWidth = sourceImage.height * displayRatio;
+                const cropHeight = sourceImage.height;
+                cropRect = {
+                    x: (sourceImage.width - cropWidth) / 2,
+                    y: 0,
+                    width: cropWidth,
+                    height: cropHeight
+                };
+            } else {
+                // 圖片更高，以寬度為準
+                const cropWidth = sourceImage.width;
+                const cropHeight = sourceImage.width / displayRatio;
+                cropRect = {
+                    x: 0,
+                    y: (sourceImage.height - cropHeight) / 2,
+                    width: cropWidth,
+                    height: cropHeight
+                };
+            }
+            
+            drawCrop();
+        }
+        
+        // 重設選區
+        function resetCrop() {
+            cropRect = {
+                x: 0,
+                y: 0,
+                width: sourceImage.width,
+                height: sourceImage.height
+            };
+            drawCrop();
+        }
+        
+        // 繪製裁切預覽
+        function drawCrop() {
+            if (!sourceImage || !cropRect) return;
+            
+            const scale = canvas.width / sourceImage.width;
+            
+            // 清空 canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // 繪製原圖（半透明）
+            ctx.globalAlpha = 0.4;
+            ctx.drawImage(sourceImage, 0, 0, canvas.width, canvas.height);
+            
+            // 繪製遮罩
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // 清除選區（顯示原圖）
+            ctx.globalCompositeOperation = 'destination-out';
+            ctx.fillRect(
+                cropRect.x * scale,
+                cropRect.y * scale,
+                cropRect.width * scale,
+                cropRect.height * scale
+            );
+            
+            // 繪製選區內容（完整亮度）
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.globalAlpha = 1.0;
+            ctx.drawImage(
+                sourceImage,
+                cropRect.x, cropRect.y, cropRect.width, cropRect.height,
+                cropRect.x * scale, cropRect.y * scale, cropRect.width * scale, cropRect.height * scale
+            );
+            
+            // 繪製選區邊框
+            ctx.strokeStyle = '#667eea';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(
+                cropRect.x * scale,
+                cropRect.y * scale,
+                cropRect.width * scale,
+                cropRect.height * scale
+            );
+            
+            // 更新資訊
+            updateCropInfo();
+        }
+        
+        // 更新裁切資訊
+        function updateCropInfo() {
+            if (!cropRect) return;
+            const size = getDisplaySize();
+            document.getElementById('cropInfo').innerHTML = 
+                `🔲 選區: ${Math.round(cropRect.x)}, ${Math.round(cropRect.y)} | ` +
+                `尺寸: ${Math.round(cropRect.width)}×${Math.round(cropRect.height)} | ` +
+                `將縮放至 ${size.width}×${size.height} (${isLandscape ? '橫向' : '直向'})`;
+        }
+        
+        // 滑鼠按下
+        function onMouseDown(e) {
+            if (!sourceImage) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const scale = canvas.width / sourceImage.width;
+            const x = (e.clientX - rect.left) / scale;
+            const y = (e.clientY - rect.top) / scale;
+            
+            isDragging = true;
+            dragStart = { x, y, shiftKey: e.shiftKey };
+            
+            if (!e.shiftKey) {
+                cropRect = { x, y, width: 0, height: 0 };
+            }
+        }
+        
+        // 滑鼠移動
+        function onMouseMove(e) {
+            if (!isDragging || !sourceImage) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const scale = canvas.width / sourceImage.width;
+            const x = (e.clientX - rect.left) / scale;
+            const y = (e.clientY - rect.top) / scale;
+            const displayRatio = getDisplayRatio();
+            
+            if (dragStart.shiftKey) {
+                // 從中心拖動
+                const dx = Math.abs(x - dragStart.x);
+                const dy = dx / displayRatio;
+                
+                cropRect = {
+                    x: Math.max(0, dragStart.x - dx),
+                    y: Math.max(0, dragStart.y - dy),
+                    width: Math.min(dx * 2, sourceImage.width),
+                    height: Math.min(dy * 2, sourceImage.height)
+                };
+            } else {
+                // 從角落拖動
+                const width = Math.abs(x - dragStart.x);
+                const height = width / displayRatio;
+                
+                cropRect = {
+                    x: Math.min(dragStart.x, x),
+                    y: Math.min(dragStart.y, y),
+                    width: Math.min(width, sourceImage.width - Math.min(dragStart.x, x)),
+                    height: Math.min(height, sourceImage.height - Math.min(dragStart.y, y))
+                };
+            }
+            
+            // 確保不超出邊界
+            cropRect.x = Math.max(0, Math.min(cropRect.x, sourceImage.width - cropRect.width));
+            cropRect.y = Math.max(0, Math.min(cropRect.y, sourceImage.height - cropRect.height));
+            
+            drawCrop();
+        }
+        
+        // 滑鼠放開
+        function onMouseUp() {
+            isDragging = false;
+            dragStart = null;
+        }
+        
+        // 剪貼簿貼上功能
+        document.addEventListener('paste', function(e) {
+            const items = e.clipboardData.items;
+            
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                
+                // 檢查是否為圖片
+                if (item.type.indexOf('image') !== -1) {
+                    e.preventDefault();
+                    
+                    const blob = item.getAsFile();
+                    loadImage(blob);
+                    showAlert('✅ 圖片已從剪貼簿貼上', 'success');
+                    
+                    break;
+                }
+            }
+        });
         
         // 傳送圖片
         async function sendImage() {
-            if (!selectedFile) {
+            if (!sourceImage || !cropRect) {
                 showAlert('請先選擇圖片', 'error');
                 return;
             }
             
-            const formData = new FormData();
-            formData.append('image', selectedFile);
-            
             showProgress(true);
-            showAlert('⏳ 處理中，請稍候...', 'info');
+            showAlert('⏳ 裁切並處理圖片...', 'info');
             document.getElementById('sendBtn').disabled = true;
             
             try {
+                // 創建裁切後的 canvas
+                const size = getDisplaySize();
+                const cropCanvas = document.createElement('canvas');
+                
+                // 如果是直向模式，需要旋轉 90 度
+                // 直向: 480×800 → 旋轉 90 度 → 800×480
+                if (!isLandscape) {
+                    // 旋轉後的尺寸
+                    cropCanvas.width = DISPLAY_WIDTH;   // 800
+                    cropCanvas.height = DISPLAY_HEIGHT; // 480
+                    
+                    const cropCtx = cropCanvas.getContext('2d');
+                    
+                    // 移動到中心點並旋轉 90 度（順時針）
+                    cropCtx.translate(DISPLAY_WIDTH / 2, DISPLAY_HEIGHT / 2);
+                    cropCtx.rotate(90 * Math.PI / 180);
+                    
+                    // 繪製裁切區域（旋轉後）
+                    cropCtx.drawImage(
+                        sourceImage,
+                        cropRect.x, cropRect.y, cropRect.width, cropRect.height,
+                        -DISPLAY_HEIGHT / 2, -DISPLAY_WIDTH / 2, DISPLAY_HEIGHT, DISPLAY_WIDTH
+                    );
+                } else {
+                    // 橫向模式：直接繪製
+                    cropCanvas.width = size.width;
+                    cropCanvas.height = size.height;
+                    const cropCtx = cropCanvas.getContext('2d');
+                    
+                    cropCtx.drawImage(
+                        sourceImage,
+                        cropRect.x, cropRect.y, cropRect.width, cropRect.height,
+                        0, 0, size.width, size.height
+                    );
+                }
+                
+                // 轉換為 Blob
+                const blob = await new Promise(resolve => {
+                    cropCanvas.toBlob(resolve, 'image/png');
+                });
+                
+                // 上傳裁切後的圖片
+                const formData = new FormData();
+                formData.append('image', blob, 'cropped.png');
+                
+                const displayInfo = isLandscape ? 
+                    `${size.width}×${size.height}` : 
+                    `${size.width}×${size.height} → 旋轉 90° → ${DISPLAY_WIDTH}×${DISPLAY_HEIGHT}`;
+                showAlert(`⏳ 上傳並顯示圖片 (${displayInfo})...`, 'info');
                 const response = await fetch('/upload', {
                     method: 'POST',
                     body: formData
