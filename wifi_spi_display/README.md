@@ -1,4 +1,33 @@
-# WiFi E-Paper Display 專案
+# Wi[![Version](https://img.shields.io/badge/version-1.8-blue.svg)](https://github.com/DanielYJHsieh/epaper_display)
+[![Status](https://img.shields.io/badge/status-stable-green.svg)]()
+[![License](https://img.shields.io/badge/license-MIT-green.svg)]()
+
+---
+
+## 🎯 專案簡介
+
+這是一個基於 ESP8266 的 **無線電子紙顯示系統**：
+- **Server 端** (PC)：負責圖像處理、分區傳輸、WebSocket 通訊、UDP 廣播
+- **Client 端** (ESP8266)：負責接收、零拷貝處理、E-Paper 顯示、自動發現 Server
+
+**v1.8 全新功能**: 支援 **UDP 自動發現 Server IP**，無需手動設定！
+
+**v1.6.3 重大更新**: 支援 **800×480 全螢幕分區顯示**，採用零拷貝架構，最佳化記憶體使用！
+
+---
+
+## ✨ 核心特色
+
+### 🔍 自動發現 (v1.8 新增)
+```
+UDP 廣播: Server 自動廣播 IP
+自動連接: ESP8266 自動發現並連接
+零設定: 無需修改 config.h 的 SERVER_HOST
+向後相容: 發現失敗自動使用預設 IP
+```
+詳見: [UDP_AUTO_DISCOVERY.md](UDP_AUTO_DISCOVERY.md)
+
+### 🔧 智能解析度專案
 
 **ESP8266 無線電子紙顯示系統**
 

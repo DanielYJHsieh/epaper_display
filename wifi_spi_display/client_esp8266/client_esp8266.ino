@@ -3,10 +3,12 @@
  * 
  * 透過 WiFi 接收影像並顯示在電子紙上
  * 支援 RLE 壓縮與串流處理
+ * 支援 UDP 自動發現 Server
  */
 
 #include <ESP8266WiFi.h>
 #include <WebSocketsClient.h>
+#include <WiFiUdp.h>
 #include <GxEPD2_BW.h>
 // FreeSansBold12pt7b 已移除以節省記憶體
 
@@ -29,6 +31,11 @@
 // ============================================
 WebSocketsClient webSocket;
 PacketReceiver packetReceiver;
+WiFiUDP udp;
+
+// Server 自動發現
+String discoveredServerIP = "";
+bool serverDiscovered = false;
 
 // 分區顯示專用緩衝區（預先配置）
 #if ENABLE_TILE_DISPLAY
@@ -826,6 +833,56 @@ void connectWiFi() {
 }
 
 // ============================================
+// UDP 自動發現 Server
+// ============================================
+String discoverServer() {
+  const int BROADCAST_PORT = 8888;
+  const int DISCOVERY_TIMEOUT = 10000;  // 10 秒超時
+  
+  Serial.println(F("*** 正在搜尋 Server (UDP 廣播)... ***"));
+  
+  udp.begin(BROADCAST_PORT);
+  
+  unsigned long startTime = millis();
+  while (millis() - startTime < DISCOVERY_TIMEOUT) {
+    int packetSize = udp.parsePacket();
+    if (packetSize) {
+      char buffer[128];
+      int len = udp.read(buffer, sizeof(buffer) - 1);
+      buffer[len] = '\0';
+      
+      String message = String(buffer);
+      
+      // 檢查格式: EPAPER_SERVER:192.168.0.43:8266
+      if (message.startsWith("EPAPER_SERVER:")) {
+        int firstColon = message.indexOf(':');
+        int secondColon = message.indexOf(':', firstColon + 1);
+        
+        if (secondColon > 0) {
+          String ip = message.substring(firstColon + 1, secondColon);
+          String port = message.substring(secondColon + 1);
+          
+          Serial.println(F("✓ 發現 Server!"));
+          Serial.print(F("  IP: "));
+          Serial.println(ip);
+          Serial.print(F("  Port: "));
+          Serial.println(port);
+          
+          udp.stop();
+          return ip;
+        }
+      }
+    }
+    delay(100);
+    yield();
+  }
+  
+  udp.stop();
+  Serial.println(F("✗ 未找到 Server (超時)"));
+  return "";
+}
+
+// ============================================
 // 記憶體碎片整理（啟動時呼叫）
 // ============================================
 void defragmentMemory() {
@@ -1098,14 +1155,28 @@ void setup() {
     while (1) delay(1000);
   }
   
+  // 自動發現 Server (UDP 廣播)
+  Serial.println(F("*** [3.5/5] 自動發現 Server... ***"));
+  discoveredServerIP = discoverServer();
+  
+  String serverHost;
+  if (discoveredServerIP.length() > 0) {
+    serverHost = discoveredServerIP;
+    serverDiscovered = true;
+    Serial.println(F("*** ✓ 使用自動發現的 Server IP ***"));
+  } else {
+    serverHost = String(SERVER_HOST);
+    Serial.println(F("*** ⚠ 使用預設 Server IP (config.h) ***"));
+  }
+  
   // 設定 WebSocket
   Serial.println(F("*** [4/5] 設定 WebSocket... ***"));
   Serial.print(F("連線到伺服器: "));
-  Serial.print(SERVER_HOST);
+  Serial.print(serverHost);
   Serial.print(":");
   Serial.println(SERVER_PORT);
   
-  webSocket.begin(SERVER_HOST, SERVER_PORT, "/");
+  webSocket.begin(serverHost.c_str(), SERVER_PORT, "/");
   webSocket.onEvent(webSocketEvent);
   webSocket.setReconnectInterval(5000);
   

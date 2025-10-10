@@ -17,6 +17,8 @@ from PIL import Image
 import socket
 import os
 import tempfile
+import threading
+import time
 
 # HTTP Server
 from aiohttp import web
@@ -78,6 +80,10 @@ class DisplayServer:
         self.last_image_path = None
         self.is_sending = False
         self.last_status = "待命中"
+        
+        # UDP 廣播控制
+        self.broadcast_running = False
+        self.broadcast_thread = None
         
         # 建立 HTTP Server (增加上傳限制到 20MB)
         self.http_app = web.Application(client_max_size=20*1024*1024)
@@ -1238,10 +1244,57 @@ class DisplayServer:
         logger.info(f"總傳輸資料: {total_compressed} bytes")
         logger.info(f"整體壓縮率: {overall_ratio:.1f}%")
     
+    def _udp_broadcast_thread(self):
+        """UDP 廣播執行緒（背景執行）"""
+        BROADCAST_PORT = 8888
+        BROADCAST_INTERVAL = 3  # 每 3 秒廣播一次
+        
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        
+        local_ip = get_local_ip()
+        message = f"EPAPER_SERVER:{local_ip}:{self.port}".encode('utf-8')
+        
+        logger.info(f"🔊 UDP 廣播啟動: port {BROADCAST_PORT}, 間隔 {BROADCAST_INTERVAL}s")
+        logger.info(f"   廣播訊息: EPAPER_SERVER:{local_ip}:{self.port}")
+        
+        while self.broadcast_running:
+            try:
+                sock.sendto(message, ('<broadcast>', BROADCAST_PORT))
+                time.sleep(BROADCAST_INTERVAL)
+            except Exception as e:
+                logger.error(f"UDP 廣播錯誤: {e}")
+                time.sleep(BROADCAST_INTERVAL)
+        
+        sock.close()
+        logger.info("🔇 UDP 廣播已停止")
+    
+    def start_broadcast(self):
+        """啟動 UDP 廣播"""
+        if not self.broadcast_running:
+            self.broadcast_running = True
+            self.broadcast_thread = threading.Thread(
+                target=self._udp_broadcast_thread, 
+                daemon=True,
+                name="UDP-Broadcast"
+            )
+            self.broadcast_thread.start()
+    
+    def stop_broadcast(self):
+        """停止 UDP 廣播"""
+        if self.broadcast_running:
+            self.broadcast_running = False
+            if self.broadcast_thread:
+                self.broadcast_thread.join(timeout=5)
+    
     async def start(self):
         """啟動伺服器"""
+        # 啟動 UDP 廣播（讓 ESP8266 自動發現）
+        self.start_broadcast()
+        
         # 啟動 WebSocket Server
         ws_server = await serve(self.handler, self.host, self.port)
+        logger.info(f"server listening on {self.host}:{self.port}")
         logger.info(f"WebSocket Server 啟動: ws://{self.host}:{self.port}")
         
         # 啟動 HTTP Server
@@ -1258,7 +1311,8 @@ class DisplayServer:
         logger.info(f"   網路存取: http://{local_ip}:{self.http_port}")
         logger.info(f"")
         logger.info(f"💡 ESP8266 設定:")
-        logger.info(f"   #define SERVER_HOST \"{local_ip}\"")
+        logger.info(f"   自動發現: UDP 廣播 (無需手動設定 IP)")
+        logger.info(f"   或手動設定: #define SERVER_HOST \"{local_ip}\"")
         logger.info(f"   #define SERVER_PORT {self.port}")
         logger.info(f"")
         
