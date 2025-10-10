@@ -1117,18 +1117,19 @@ void setup() {
   Serial.println(F("*** [5/5] 初始化電子紙顯示器... ***"));
   display.init(SERIAL_BAUD);
   
-  Serial.println(F("*** 清除整個螢幕（上電初始化）... ***"));
-  display.setFullWindow();
-  display.clearScreen();
-  display.refresh(true);  // 完整刷新以確保清除乾淨
+  // *** 上電清屏已停用（節省啟動時間）***
+  // Serial.println(F("*** 清除整個螢幕（上電初始化）... ***"));
+  // display.setFullWindow();
+  // display.clearScreen();
+  // display.refresh(true);  // 完整刷新以確保清除乾淨
   
   // 清屏後立即切換到部分窗口模式，確保第一次更新正常
   display.setPartialWindow(DISPLAY_OFFSET_X, DISPLAY_OFFSET_Y, DISPLAY_WIDTH, DISPLAY_HEIGHT);
-  Serial.println(F("*** 螢幕清除完成，已切換到部分窗口模式 ***"));
+  Serial.println(F("*** 已切換到部分窗口模式（跳過上電清屏）***"));
   
-  // 顯示測試畫面
-  Serial.println(F("*** 顯示測試畫面... ***"));
-  displayTestPattern();
+  // *** 測試畫面已停用 ***
+  // Serial.println(F("*** 顯示測試畫面... ***"));
+  // displayTestPattern();
   
   Serial.println(F("初始化完成！"));
   Serial.print(F("可用記憶體: "));
