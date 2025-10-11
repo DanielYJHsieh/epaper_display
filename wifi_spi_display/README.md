@@ -4,6 +4,10 @@
 
 ---
 
+> 快速導覽：想了解如何在本專案使用 GitHub Copilot 的 Agent Mode 來「下指令、互動討論、邊改邊驗證」？請閱讀《[HOW_TO_USE_COPILOT_AGENT_MODE.md](HOW_TO_USE_COPILOT_AGENT_MODE.md)》。
+
+> 🔋 **新功能規劃**: 想要讓 ESP8266 擺脫 USB 線束縛？查看《[電池供電與充放電管理系統](battery_management/)》，提供完整的硬體架構、韌體設計與開發流程！
+
 ## 🎯 專案簡介
 
 這是一個基於 ESP8266 的 **無線電子紙顯示系統**：
