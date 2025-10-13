@@ -8,6 +8,8 @@
 
 > 🔋 **新功能規劃**: 想要讓 ESP8266 擺脫 USB 線束縛？查看《[電池供電與充放電管理系統](battery_management/)》，提供完整的硬體架構、韌體設計與開發流程！
 
+> 🍓 **Raspberry Pi 部署**: 想要在 **Raspberry Pi 1 Model B** 上執行 Server？查看《[Raspberry Pi 部署指南](docs/RASPBERRY_PI_DEPLOYMENT.md)》，提供完整的 OS 設定、安裝腳本、記憶體最佳化與系統服務配置！
+
 ## 🎯 專案簡介
 
 這是一個基於 ESP8266 的 **無線電子紙顯示系統**：

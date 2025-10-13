@@ -1,0 +1,170 @@
+[Unit]
+Description=WiFi SPI Display Server (E-Paper WebUI)
+Documentation=https://github.com/your-repo/wifi_spi_display
+After=network-online.target
+Wants=network-online.target
+# 確保在網路完全啟動後才執行
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/wifi_spi_display/server
+
+# 環境變數
+Environment="PATH=/home/pi/wifi_spi_display/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="PYTHONUNBUFFERED=1"
+
+# 執行指令
+ExecStart=/home/pi/wifi_spi_display/venv/bin/python server_with_webui.py
+
+# 重啟策略
+# 服務異常終止時自動重啟
+Restart=always
+
+# 重啟前等待時間 (秒)
+RestartSec=10
+
+# 限制重啟頻率 (200秒內最多重啟5次)
+StartLimitInterval=200
+StartLimitBurst=5
+
+# ============================================================================
+# 資源限制 (重要！針對 Raspberry Pi 1 的 512MB RAM)
+# ============================================================================
+
+# 記憶體硬限制 (超過會被 OOM Killer 終止)
+# 設為 250MB，為系統保留 ~260MB RAM
+MemoryMax=250M
+
+# 記憶體軟限制 (超過會觸發記憶體壓力)
+# 設為 200MB，提供緩衝空間
+MemoryHigh=200M
+
+# CPU 配額限制 (90% = 單核心的 90%)
+# 為系統保留 10% CPU
+CPUQuota=90%
+
+# 任務數限制 (限制執行緒數量)
+TasksMax=50
+
+# ============================================================================
+# 日誌設定
+# ============================================================================
+
+# 標準輸出導向 systemd journal
+StandardOutput=journal
+
+# 標準錯誤導向 systemd journal
+StandardError=journal
+
+# 系統日誌識別符號
+SyslogIdentifier=wifi_display
+
+# 日誌等級
+#SyslogLevel=info
+
+# ============================================================================
+# 安全性設定
+# ============================================================================
+
+# 禁止獲取新權限
+NoNewPrivileges=true
+
+# 使用私有暫存目錄
+PrivateTmp=true
+
+# 保護系統目錄 (唯讀)
+ProtectSystem=strict
+
+# 保護家目錄 (唯讀，除了指定的 ReadWritePaths)
+ProtectHome=read-only
+
+# 允許寫入的目錄
+ReadWritePaths=/home/pi/wifi_spi_display/server/logs
+ReadWritePaths=/home/pi/wifi_spi_display/server/uploads
+
+# 禁止寫入 /usr, /boot, /efi
+#ProtectKernelTunables=true
+
+# 禁止載入核心模組
+#ProtectKernelModules=true
+
+# ============================================================================
+# 其他設定
+# ============================================================================
+
+# 工作目錄不存在時不啟動
+#RequiresMountsFor=/home/pi/wifi_spi_display
+
+# Nice 值 (程序優先度, -20 到 19，負數 = 高優先度)
+# 設為 0 (預設)，不調整優先度
+#Nice=0
+
+# I/O 排程優先度 (0-7，數字越小優先度越高)
+# 設為 4 (中等)，避免影響系統回應
+#IOSchedulingPriority=4
+
+[Install]
+# 在多使用者模式 (文字介面) 啟動
+WantedBy=multi-user.target
+
+# ============================================================================
+# 使用說明
+# ============================================================================
+#
+# 1. 複製此檔案到 systemd 目錄:
+#    sudo cp wifi_display.service /etc/systemd/system/
+#
+# 2. 重新載入 systemd:
+#    sudo systemctl daemon-reload
+#
+# 3. 啟用服務 (開機自動啟動):
+#    sudo systemctl enable wifi_display.service
+#
+# 4. 立即啟動服務:
+#    sudo systemctl start wifi_display.service
+#
+# 5. 檢查服務狀態:
+#    sudo systemctl status wifi_display.service
+#
+# 6. 查看即時日誌:
+#    sudo journalctl -u wifi_display.service -f
+#
+# 7. 查看過去 1 小時的日誌:
+#    sudo journalctl -u wifi_display.service --since "1 hour ago"
+#
+# 8. 停止服務:
+#    sudo systemctl stop wifi_display.service
+#
+# 9. 重啟服務:
+#    sudo systemctl restart wifi_display.service
+#
+# 10. 禁用服務 (取消開機自動啟動):
+#     sudo systemctl disable wifi_display.service
+#
+# ============================================================================
+# 疑難排解
+# ============================================================================
+#
+# 服務無法啟動:
+#   - 檢查日誌: sudo journalctl -u wifi_display.service -n 100
+#   - 檢查路徑: 確認 /home/pi/wifi_spi_display 存在
+#   - 檢查權限: ls -la /home/pi/wifi_spi_display
+#   - 手動測試: cd /home/pi/wifi_spi_display/server && 
+#                source ../venv/bin/activate && 
+#                python server_with_webui.py
+#
+# 記憶體不足 (OOM):
+#   - 增加 swap: sudo dphys-swapfile swapoff && 
+#                sudo nano /etc/dphys-swapfile (改為 CONF_SWAPSIZE=1024) &&
+#                sudo dphys-swapfile setup && 
+#                sudo dphys-swapfile swapon
+#   - 降低 MemoryMax: 編輯此檔案，改為 MemoryMax=200M
+#   - 調整配置: 編輯 server/config_rpi.py，降低 IMAGE_MAX_SIZE
+#
+# CPU 使用過高:
+#   - 降低 CPUQuota: 改為 CPUQuota=75%
+#   - 檢查圖像處理: 關閉抖動演算法 (config_rpi.py: USE_DITHER=False)
+#
+# ============================================================================

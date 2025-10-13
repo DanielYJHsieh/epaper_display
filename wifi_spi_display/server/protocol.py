@@ -256,6 +256,7 @@ if __name__ == "__main__":
     # 測試 5: 驗證
     print("\n測試 5: 封包驗證")
     print(f"有效封包: {Protocol.validate_header(packet1)}")
-    print(f"無效封包: {Protocol.validate_header(b'\\x00\\x00\\x00')}")
+    invalid_data = b'\x00\x00\x00'
+    print(f"無效封包: {Protocol.validate_header(invalid_data)}")
     
     print("\n測試完成！")
