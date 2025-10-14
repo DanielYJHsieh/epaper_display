@@ -6,6 +6,7 @@
 
 ## 📋 目錄
 
+0. [快速開始](#快速開始) ⭐ **新增: 使用自動化腳本快速部署**
 1. [硬體規格與限制](#硬體規格與限制)
 2. [開發任務清單](#開發任務清單)
 3. [作業系統準備](#作業系統準備)
@@ -19,7 +20,57 @@
 
 ---
 
-## 🔧 硬體規格與限制
+## � 快速開始
+
+> **新增於 v1.4**: 如果你想快速部署而不看詳細說明，請使用以下自動化腳本。
+
+### 最快 5 分鐘部署
+
+```bash
+# 1. 準備好 Raspberry Pi OS (Bullseye 推薦)
+
+# 2. 上傳專案檔案到 Pi
+# 在本機執行:
+scp -r server/ pi@<raspberry-pi-ip>:~/wifi_spi_display/
+
+# 3. SSH 連接到 Pi
+ssh pi@<raspberry-pi-ip>
+
+# 4. 執行自動部署 (安裝環境和套件)
+cd ~/wifi_spi_display/server
+bash deploy_rpi.sh
+
+# 5. 設定開機自動啟動
+bash install_service.sh
+
+# 完成！服務已啟動並設定為開機自動執行
+```
+
+**自動化腳本說明**:
+
+| 腳本 | 功能 | 執行時間 |
+|------|------|----------|
+| `deploy_rpi.sh` | 檢查環境、安裝套件、建立虛擬環境 | 5-15 分鐘 |
+| `install_service.sh` | 建立 systemd 服務、設定開機自動啟動 | < 1 分鐘 |
+
+**驗證安裝**:
+
+```bash
+# 檢查服務狀態
+sudo systemctl status wifi_display
+
+# 測試 Web UI
+curl http://localhost:8080
+
+# 查看日誌
+sudo journalctl -u wifi_display -f
+```
+
+📖 **詳細說明請參考**: [快速部署指南](./QUICKSTART_RPI.md)
+
+---
+
+## �🔧 硬體規格與限制
 
 ### Raspberry Pi 1 Model B 規格
 
@@ -1738,6 +1789,13 @@ sudo sysctl vm.swappiness=10
 
 ## 📝 版本歷史
 
+- **v1.4** (2025-10-15): **新增自動化部署腳本** ⭐
+  - ✅ 新增 `deploy_rpi.sh` 一鍵部署腳本
+  - ✅ 新增 `install_service.sh` 自動設定 systemd 服務
+  - ✅ 新增快速開始章節，5 分鐘完成部署
+  - ✅ 新增 [快速部署指南](./QUICKSTART_RPI.md) 文件
+  - ✅ 腳本已在實際環境驗證 (hsieh@192.168.0.41)
+  - 📌 服務路徑已修正: `/home/hsieh/epaper_display/wifi_spi_display/server/venv/`
 - **v1.3** (2025-10-13): **重要更新 - 明確指定 Bullseye 版本**
   - ⚠️ 強制要求使用 Debian Bullseye (Python 3.9)
   - 新增版本對照表與相容性說明
@@ -1763,6 +1821,7 @@ sudo sysctl vm.swappiness=10
 - **必須使用 Raspberry Pi OS Lite (Legacy) - Debian Bullseye**
 - **必須確認 Python 3.9.x** (不是 3.11 或 3.13)
 - **錯誤版本無法修復，必須重新燒錄 SD 卡**
+- **推薦使用自動化腳本快速部署** (`deploy_rpi.sh` + `install_service.sh`)
 
 **維護者**: WiFi SPI Display 專案團隊  
-**最後更新**: 2025-10-13
+**最後更新**: 2025-10-15
