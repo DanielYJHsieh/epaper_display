@@ -327,6 +327,80 @@ class DisplayServer:
         except Exception as e:
             logger.error(f"發送條帶圖片失敗: {e}")
     
+    async def send_full_screen_800x480(self, image_path: str):
+        """
+        發送 800×480 完整畫面更新（推薦模式，無殘影）
+        
+        使用 PROTO_TYPE_FULL (0x01) 一次性發送完整 48000 bytes 圖像資料。
+        優點：
+        - 無殘影問題（client 端會先清除再顯示）
+        - 邏輯簡單，程式碼易維護
+        - 記憶體使用更優化
+        
+        Args:
+            image_path: 圖片檔案路徑
+        """
+        if not self.clients:
+            logger.warning("沒有連接的客戶端")
+            return
+        
+        logger.info(f"=== 開始完整畫面傳輸 (800x480): {image_path} ===")
+        
+        try:
+            # 載入圖片
+            img = Image.open(image_path)
+            logger.info(f"原始圖片: {img.size}, 模式: {img.mode}")
+            
+            # 轉換為 1-bit (使用 800x480 處理器)
+            processed = self.processor_800.convert_to_1bit(img, dither=True)
+            logger.info(f"轉換為 1-bit: {processed.size}")
+            
+            # 轉換為 bytes（48000 bytes = 800 * 480 / 8）
+            image_data = self.processor_800.image_to_bytes(processed)
+            logger.info(f"圖像資料: {len(image_data)} bytes")
+            
+            if len(image_data) != 48000:
+                logger.error(f"圖像資料大小錯誤: 預期 48000 bytes, 實際 {len(image_data)} bytes")
+                return
+            
+            # 不使用壓縮，直接發送未壓縮資料
+            # （ESP32-C3 有足夠記憶體，避免壓縮/解壓縮的複雜度）
+            logger.info(f"發送未壓縮資料: {len(image_data)} bytes（完整畫面模式）")
+            
+            # 創建完整畫面封包
+            self.seq_id += 1
+            packet = Protocol.pack_full_frame(self.seq_id, image_data)
+            logger.info(f"封包大小: {len(packet)} bytes (含標頭)")
+            
+            # 發送到所有客戶端
+            logger.info(f"發送完整畫面到 {len(self.clients)} 個客戶端...")
+            start_time = asyncio.get_event_loop().time()
+            
+            await asyncio.gather(
+                *[client.send(packet) for client in self.clients],
+                return_exceptions=True
+            )
+            
+            elapsed = asyncio.get_event_loop().time() - start_time
+            logger.info(f"✓ 完整畫面發送完成 (耗時: {elapsed:.2f} 秒)")
+            
+            # 等待 ESP32-C3 完成顯示並發送 READY 訊號
+            logger.info(f"等待設備完成顯示...")
+            self.tile_ready_event.clear()
+            
+            try:
+                await asyncio.wait_for(self.tile_ready_event.wait(), timeout=30.0)
+                logger.info(f"✓ 設備顯示完成")
+            except asyncio.TimeoutError:
+                logger.warning(f"⚠️ 等待設備完成超時")
+            
+            logger.info(f"=== 完整畫面傳輸完成 ===")
+            
+        except Exception as e:
+            logger.error(f"發送完整畫面失敗: {e}")
+            import traceback
+            traceback.print_exc()
+    
     async def send_command(self, command: Command, param: int = 0):
         """
         發送控制指令

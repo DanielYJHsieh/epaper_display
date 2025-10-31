@@ -109,7 +109,7 @@ class DisplayServer:
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>ESP8266 電子紙顯示器控制</title>
+    <title>ESP32-C3 電子紙顯示器控制 (完整畫面模式)</title>
     <style>
         * {
             margin: 0;
@@ -406,8 +406,8 @@ class DisplayServer:
 <body>
     <div class="container">
         <div class="header">
-            <h1>📱 ESP8266 電子紙顯示器</h1>
-            <p>Web 控制介面 v1.7.1</p>
+            <h1>📱 ESP32-C3 電子紙顯示器</h1>
+            <p>Web 控制介面 v2.0 (完整畫面模式)</p>
         </div>
         
         <div class="content">
@@ -1081,9 +1081,9 @@ class DisplayServer:
             logger.info(f"收到上傳圖片，儲存至: {temp_path}")
             self.last_image_path = temp_path
             
-            # 處理並傳送（使用 800×480 全螢幕分區模式）
+            # 處理並傳送（使用 800×480 完整畫面模式，無殘影）
             self.last_status = "傳送中..."
-            await self.send_tiled_image_800(temp_path)
+            await self.send_full_screen_800x480(temp_path)
             
             self.last_status = "傳送完成"
             self.is_sending = False
@@ -1228,10 +1228,10 @@ class DisplayServer:
         )
     
     async def send_test_pattern_800(self):
-        """發送測試圖案 (800×480 分區模式)"""
+        """發送測試圖案 (800×480 完整畫面模式)"""
         logger.info("生成測試圖案 (800×480)")
         test_img = self.processor_800.create_test_pattern()
-        await self.send_tiled_image_800_from_image(test_img)
+        await self.send_full_screen_800x480_from_image(test_img)
     
     async def send_tiled_image_800(self, image_path: str):
         """發送分區圖片 (800×480, 3個條帶)"""
@@ -1316,6 +1316,83 @@ class DisplayServer:
         logger.info(f"總原始資料: {total_raw} bytes")
         logger.info(f"總傳輸資料: {total_compressed} bytes")
         logger.info(f"整體壓縮率: {overall_ratio:.1f}%")
+    
+    async def send_full_screen_800x480(self, image_path: str):
+        """
+        發送 800×480 完整畫面更新（推薦模式，無殘影）
+        
+        使用 PROTO_TYPE_FULL (0x01) 一次性發送完整 48000 bytes 圖像資料。
+        優點：
+        - 無殘影問題（client 端會先清除再顯示）
+        - 邏輯簡單，程式碼易維護
+        - 記憶體使用更優化
+        
+        Args:
+            image_path: 圖片檔案路徑
+        """
+        logger.info(f"處理圖片: {image_path}")
+        img = Image.open(image_path)
+        await self.send_full_screen_800x480_from_image(img)
+    
+    async def send_full_screen_800x480_from_image(self, img: Image.Image):
+        """從 PIL Image 發送完整畫面 (800×480)"""
+        if not self.clients:
+            logger.warning("沒有連接的客戶端")
+            return
+        
+        logger.info(f"=== 開始完整畫面傳輸 (800x480) ===")
+        logger.info(f"原始圖片: {img.size}, 模式: {img.mode}")
+        
+        try:
+            # 轉換為 1-bit (使用 800x480 處理器)
+            processed = self.processor_800.convert_to_1bit(img, dither=True)
+            logger.info(f"轉換為 1-bit: {processed.size}")
+            
+            # 轉換為 bytes（48000 bytes = 800 * 480 / 8）
+            image_data = self.processor_800.image_to_bytes(processed)
+            logger.info(f"圖像資料: {len(image_data)} bytes")
+            
+            if len(image_data) != 48000:
+                logger.error(f"圖像資料大小錯誤: 預期 48000 bytes, 實際 {len(image_data)} bytes")
+                return
+            
+            # 不使用壓縮，直接發送未壓縮資料
+            # （ESP32-C3 有足夠記憶體，避免壓縮/解壓縮的複雜度）
+            logger.info(f"發送未壓縮資料: {len(image_data)} bytes（完整畫面模式）")
+            
+            # 創建完整畫面封包
+            self.seq_id += 1
+            packet = Protocol.pack_full_frame(self.seq_id, image_data)
+            logger.info(f"封包大小: {len(packet)} bytes (含標頭)")
+            
+            # 發送到所有客戶端
+            logger.info(f"發送完整畫面到 {len(self.clients)} 個客戶端...")
+            start_time = asyncio.get_event_loop().time()
+            
+            await asyncio.gather(
+                *[client.send(packet) for client in self.clients],
+                return_exceptions=True
+            )
+            
+            elapsed = asyncio.get_event_loop().time() - start_time
+            logger.info(f"✓ 完整畫面發送完成 (耗時: {elapsed:.2f} 秒)")
+            
+            # 等待 ESP32-C3 完成顯示並發送 READY 訊號
+            logger.info(f"等待設備完成顯示...")
+            self.tile_ready_event.clear()
+            
+            try:
+                await asyncio.wait_for(self.tile_ready_event.wait(), timeout=30.0)
+                logger.info(f"✓ 設備顯示完成")
+            except asyncio.TimeoutError:
+                logger.warning(f"⚠️ 等待設備完成超時")
+            
+            logger.info(f"=== 完整畫面傳輸完成 ===")
+            
+        except Exception as e:
+            logger.error(f"發送完整畫面失敗: {e}")
+            import traceback
+            traceback.print_exc()
     
     def _udp_broadcast_thread(self):
         """UDP 廣播執行緒（背景執行）"""
@@ -1402,7 +1479,8 @@ async def interactive_mode(server: DisplayServer):
     print("  clients           - 顯示連接的客戶端")
     print("  test              - 發送測試圖案 (800×480)")
     print("  clear             - 清空螢幕")
-    print("  tile <圖片路徑>   - 發送分區圖片 (800×480)")
+    print("  full <圖片路徑>   - 發送完整畫面 (800×480, 推薦, 無殘影)")
+    print("  tile <圖片路徑>   - 發送分區圖片 (800×480, 舊版)")
     print("  web               - 顯示網頁界面連結")
     print("  quit              - 結束程式")
     print()
@@ -1431,6 +1509,8 @@ async def interactive_mode(server: DisplayServer):
                 await server.send_test_pattern_800()
             elif action == "clear":
                 await server.send_command(Command.CLEAR_SCREEN)
+            elif action == "full" and len(parts) > 1:
+                await server.send_full_screen_800x480(parts[1])
             elif action == "tile" and len(parts) > 1:
                 await server.send_tiled_image_800(parts[1])
             elif action == "web":
